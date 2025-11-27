@@ -6,12 +6,14 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ChatView: View {
     @Environment(\.floatingPanel) private var panel
     @State private var viewModel: ChatViewModel
     @State private var isHoveringClose = false
     @State private var isHoveringClear = false
+    @State private var isDraggingOver = false
 
     init(appState: AppState) {
         _viewModel = State(initialValue: ChatViewModel(
@@ -99,7 +101,7 @@ struct ChatView: View {
                                         .font(.system(size: 16, weight: .medium))
                                         .foregroundColor(.white.opacity(0.5))
 
-                                    Text("Copy text to see quick actions")
+                                    Text("Drop images or copy text")
                                         .font(.system(size: 12))
                                         .foregroundColor(.white.opacity(0.3))
                                 }
@@ -171,8 +173,16 @@ struct ChatView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
             }
+
+            // Drop zone overlay
+            if isDraggingOver {
+                DropZoneOverlay()
+            }
         }
         .frame(minWidth: 320, minHeight: 200)
+        .onDrop(of: [.image, .fileURL], isTargeted: $isDraggingOver) { providers in
+            viewModel.handleDroppedImage(providers: providers)
+        }
         .onAppear {
             viewModel.checkClipboardForQuickActions()
         }
@@ -180,5 +190,47 @@ struct ChatView: View {
             panel?.close()
             return .handled
         }
+    }
+}
+
+// MARK: - Drop Zone Overlay
+
+struct DropZoneOverlay: View {
+    var body: some View {
+        ZStack {
+            // Semi-transparent background
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.black.opacity(0.6))
+
+            // Dashed border
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(
+                    style: StrokeStyle(lineWidth: 3, dash: [10, 5])
+                )
+                .foregroundColor(.white.opacity(0.6))
+                .padding(8)
+
+            // Drop icon and text
+            VStack(spacing: 12) {
+                Image(systemName: "photo.badge.plus")
+                    .font(.system(size: 48, weight: .light))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.blue, .purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                Text("Drop image here")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+
+                Text("PNG, JPG, GIF, HEIC supported")
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: true)
     }
 }

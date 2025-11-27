@@ -137,6 +137,78 @@ class ChatViewModel {
         pendingScreenshot = nil
     }
 
+    // MARK: - Drag & Drop Methods
+
+    /// Supported image types for drag and drop
+    static let supportedImageTypes: [String] = [
+        "public.png", "public.jpeg", "public.heic", "public.gif",
+        "public.tiff", "public.bmp", "com.apple.icns"
+    ]
+
+    /// Handle dropped image files
+    func handleDroppedImage(providers: [NSItemProvider]) -> Bool {
+        for provider in providers {
+            // Check for file URL first
+            if provider.hasItemConformingToTypeIdentifier("public.file-url") {
+                provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { [weak self] item, _ in
+                    guard let data = item as? Data,
+                          let url = URL(dataRepresentation: data, relativeTo: nil),
+                          let image = NSImage(contentsOf: url) else { return }
+
+                    // Resize if needed
+                    let resizedImage = self?.resizeImageIfNeeded(image, maxDimension: 2048) ?? image
+
+                    DispatchQueue.main.async {
+                        self?.pendingScreenshot = resizedImage
+                    }
+                }
+                return true
+            }
+
+            // Check for image data directly
+            for imageType in Self.supportedImageTypes {
+                if provider.hasItemConformingToTypeIdentifier(imageType) {
+                    provider.loadItem(forTypeIdentifier: imageType, options: nil) { [weak self] item, _ in
+                        var image: NSImage?
+
+                        if let data = item as? Data {
+                            image = NSImage(data: data)
+                        } else if let url = item as? URL {
+                            image = NSImage(contentsOf: url)
+                        }
+
+                        guard let loadedImage = image else { return }
+
+                        let resizedImage = self?.resizeImageIfNeeded(loadedImage, maxDimension: 2048) ?? loadedImage
+
+                        DispatchQueue.main.async {
+                            self?.pendingScreenshot = resizedImage
+                        }
+                    }
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    /// Resize image if larger than max dimension
+    private func resizeImageIfNeeded(_ image: NSImage, maxDimension: CGFloat) -> NSImage {
+        let size = image.size
+        guard size.width > maxDimension || size.height > maxDimension else { return image }
+
+        let ratio = min(maxDimension / size.width, maxDimension / size.height)
+        let newSize = NSSize(width: size.width * ratio, height: size.height * ratio)
+
+        let newImage = NSImage(size: newSize)
+        newImage.lockFocus()
+        image.draw(in: NSRect(origin: .zero, size: newSize),
+                   from: NSRect(origin: .zero, size: size),
+                   operation: .copy, fraction: 1.0)
+        newImage.unlockFocus()
+        return newImage
+    }
+
     func pasteFromClipboard() {
         if let text = clipboardService.readText(),
            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

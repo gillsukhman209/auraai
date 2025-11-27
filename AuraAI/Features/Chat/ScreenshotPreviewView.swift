@@ -52,7 +52,7 @@ struct ScreenshotPreviewView: View {
 
             // Label
             VStack(alignment: .leading, spacing: 2) {
-                Text("Screenshot")
+                Text("Image attached")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.white.opacity(0.9))
 
@@ -125,7 +125,7 @@ struct ScreenshotFullPreview: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Text("Screenshot Preview")
+                Text("Image Preview")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.primary)
 
