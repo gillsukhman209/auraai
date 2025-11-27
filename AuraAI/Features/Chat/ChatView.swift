@@ -14,8 +14,13 @@ struct ChatView: View {
     @State private var isHoveringClose = false
     @State private var isHoveringClear = false
     @State private var isDraggingOver = false
+    @FocusState private var isInputFocused: Bool
+
+    // Keep reference to appState for screenshot hotkey
+    private let appState: AppState
 
     init(appState: AppState) {
+        self.appState = appState
         _viewModel = State(initialValue: ChatViewModel(
             openAIService: appState.openAIService,
             clipboardService: appState.clipboardService,
@@ -168,7 +173,8 @@ struct ChatView: View {
                         Task { await viewModel.captureScreenshot() }
                     },
                     isDisabled: viewModel.isProcessing,
-                    hasScreenshot: viewModel.pendingScreenshot != nil
+                    hasScreenshot: viewModel.pendingScreenshot != nil,
+                    isFocused: $isInputFocused
                 )
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
@@ -185,10 +191,28 @@ struct ChatView: View {
         }
         .onAppear {
             viewModel.checkClipboardForQuickActions()
+            consumeScreenshotFromHotkey()
+        }
+        .onChange(of: appState.pendingScreenshotFromHotkey) { _, newValue in
+            if newValue != nil {
+                consumeScreenshotFromHotkey()
+            }
         }
         .onKeyPress(.escape) {
             panel?.close()
             return .handled
+        }
+    }
+
+    /// Transfer screenshot from hotkey to viewModel and focus input
+    private func consumeScreenshotFromHotkey() {
+        if let screenshot = appState.pendingScreenshotFromHotkey {
+            viewModel.pendingScreenshot = screenshot
+            appState.pendingScreenshotFromHotkey = nil
+            // Focus input after a brief delay to ensure view is ready
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isInputFocused = true
+            }
         }
     }
 }

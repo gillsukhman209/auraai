@@ -5,6 +5,7 @@
 //  Created by Sukhman Singh on 11/26/25.
 //
 
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -22,13 +23,35 @@ class AppState {
     // State
     var conversation = Conversation()
 
+    // Shared screenshot state (set by hotkey, consumed by ChatView)
+    var pendingScreenshotFromHotkey: NSImage?
+
     init() {
-        setupHotKey()
+        setupHotKeys()
     }
 
-    private func setupHotKey() {
+    private func setupHotKeys() {
+        // Cmd+Shift+Space - Toggle panel
         hotKeyManager.onHotKeyPressed = { [weak self] in
             self?.panelController.toggle()
+        }
+
+        // Cmd+Shift+S - Quick screenshot
+        hotKeyManager.onScreenshotHotKeyPressed = { [weak self] in
+            Task { @MainActor in
+                await self?.captureAndShowScreenshot()
+            }
+        }
+    }
+
+    @MainActor
+    private func captureAndShowScreenshot() async {
+        do {
+            let image = try await screenshotService.captureFullScreen()
+            pendingScreenshotFromHotkey = image
+            panelController.show()
+        } catch {
+            print("Screenshot hotkey error: \(error.localizedDescription)")
         }
     }
 }

@@ -14,6 +14,7 @@ struct ChatInputView: View {
     var onScreenshot: () -> Void
     var isDisabled: Bool
     var hasScreenshot: Bool
+    var isFocused: FocusState<Bool>.Binding
 
     @State private var isHoveringPaste = false
     @State private var isHoveringScreenshot = false
@@ -29,7 +30,7 @@ struct ChatInputView: View {
             }
             .buttonStyle(.plain)
             .onHover { isHoveringScreenshot = $0 }
-            .help("Capture screenshot")
+            .help("Capture screenshot (⌘⇧S)")
             .disabled(isDisabled)
 
             // Paste button
@@ -49,6 +50,7 @@ struct ChatInputView: View {
                 .lineLimit(1...4)
                 .foregroundColor(.white)
                 .tint(.white)
+                .focused(isFocused)
                 .onSubmit {
                     if !text.isEmpty && !isDisabled {
                         onSend()
@@ -88,21 +90,31 @@ struct ChatInputView: View {
     }
 }
 
-#Preview {
-    ZStack {
-        Color.gray.opacity(0.3)
-        VStack {
-            Spacer()
-            ChatInputView(
-                text: .constant(""),
-                onSend: {},
-                onPaste: {},
-                onScreenshot: {},
-                isDisabled: false,
-                hasScreenshot: false
-            )
-            .padding()
+// Preview wrapper to handle FocusState
+struct ChatInputViewPreview: View {
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        ZStack {
+            Color.gray.opacity(0.3)
+            VStack {
+                Spacer()
+                ChatInputView(
+                    text: .constant(""),
+                    onSend: {},
+                    onPaste: {},
+                    onScreenshot: {},
+                    isDisabled: false,
+                    hasScreenshot: false,
+                    isFocused: $isFocused
+                )
+                .padding()
+            }
         }
+        .frame(width: 400, height: 200)
     }
-    .frame(width: 400, height: 200)
+}
+
+#Preview {
+    ChatInputViewPreview()
 }

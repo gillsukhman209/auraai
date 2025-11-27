@@ -5,39 +5,65 @@
 //  Created by Sukhman Singh on 11/26/25.
 //
 
-import Foundation
-import Carbon
 import AppKit
+import Carbon
+import Foundation
 
 @Observable
 class GlobalHotKeyManager {
     private var eventHandler: EventHandlerRef?
-    private var hotKeyRef: EventHotKeyRef?
-    var onHotKeyPressed: (() -> Void)?
+    private var toggleHotKeyRef: EventHotKeyRef?
+    private var screenshotHotKeyRef: EventHotKeyRef?
+
+    // Hotkey IDs
+    private static let toggleHotKeyID: UInt32 = 1
+    private static let screenshotHotKeyID: UInt32 = 2
+
+    // Callbacks
+    var onHotKeyPressed: (() -> Void)?              // Cmd+Shift+Space - toggle panel
+    var onScreenshotHotKeyPressed: (() -> Void)?    // Cmd+Shift+S - quick screenshot
 
     init() {
-        setupHotKey()
+        setupHotKeys()
     }
 
-    private func setupHotKey() {
-        // Register for Command + Shift + Space
-        var hotKeyID = EventHotKeyID()
-        hotKeyID.signature = OSType(0x41555241) // "AURA" in ASCII
-        hotKeyID.id = 1
-
+    private func setupHotKeys() {
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
         )
 
-        // Install event handler
+        // Install single event handler for all hotkeys
         let status = InstallEventHandler(
             GetApplicationEventTarget(),
             { (_, event, userData) -> OSStatus in
-                guard let userData = userData else { return noErr }
+                guard let userData = userData, let event = event else { return noErr }
+
+                // Extract the hotkey ID from the event
+                var hotKeyID = EventHotKeyID()
+                let getParamStatus = GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hotKeyID
+                )
+
+                guard getParamStatus == noErr else { return noErr }
+
                 let manager = Unmanaged<GlobalHotKeyManager>.fromOpaque(userData).takeUnretainedValue()
+
                 DispatchQueue.main.async {
-                    manager.onHotKeyPressed?()
+                    switch hotKeyID.id {
+                    case GlobalHotKeyManager.toggleHotKeyID:
+                        manager.onHotKeyPressed?()
+                    case GlobalHotKeyManager.screenshotHotKeyID:
+                        manager.onScreenshotHotKeyPressed?()
+                    default:
+                        break
+                    }
                 }
                 return noErr
             },
@@ -52,27 +78,50 @@ class GlobalHotKeyManager {
             return
         }
 
-        // Register hot key: Command + Shift + Space
-        let registerStatus = RegisterEventHotKey(
+        // Register toggle hotkey: Cmd + Shift + Space
+        var toggleID = EventHotKeyID(
+            signature: OSType(0x41555241), // "AURA"
+            id: Self.toggleHotKeyID
+        )
+        let toggleStatus = RegisterEventHotKey(
             UInt32(kVK_Space),
             UInt32(cmdKey | shiftKey),
-            hotKeyID,
+            toggleID,
             GetApplicationEventTarget(),
             0,
-            &hotKeyRef
+            &toggleHotKeyRef
         )
+        if toggleStatus != noErr {
+            print("Failed to register toggle hotkey: \(toggleStatus)")
+        }
 
-        if registerStatus != noErr {
-            print("Failed to register hot key: \(registerStatus)")
+        // Register screenshot hotkey: Cmd + Shift + S
+        var screenshotID = EventHotKeyID(
+            signature: OSType(0x41555241), // "AURA"
+            id: Self.screenshotHotKeyID
+        )
+        let screenshotStatus = RegisterEventHotKey(
+            UInt32(kVK_ANSI_S),
+            UInt32(cmdKey | shiftKey),
+            screenshotID,
+            GetApplicationEventTarget(),
+            0,
+            &screenshotHotKeyRef
+        )
+        if screenshotStatus != noErr {
+            print("Failed to register screenshot hotkey: \(screenshotStatus)")
         }
     }
 
     deinit {
-        if let hotKeyRef = hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
+        if let ref = toggleHotKeyRef {
+            UnregisterEventHotKey(ref)
         }
-        if let eventHandler = eventHandler {
-            RemoveEventHandler(eventHandler)
+        if let ref = screenshotHotKeyRef {
+            UnregisterEventHotKey(ref)
+        }
+        if let handler = eventHandler {
+            RemoveEventHandler(handler)
         }
     }
 }
