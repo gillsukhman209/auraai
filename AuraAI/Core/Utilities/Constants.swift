@@ -30,6 +30,9 @@ enum AppConstants {
         static let geminiAPIKey = Secrets.geminiAPIKey
         static let geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/models"
         static let geminiModel = "gemini-2.0-flash"
+
+        // MARK: - Gemini Image Generation (Nano Banana Pro - Released Nov 20, 2025)
+        static let imagenModel = "gemini-3-pro-image-preview"
     }
 
     enum HotKey {

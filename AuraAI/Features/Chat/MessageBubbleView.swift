@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct MessageBubbleView: View {
     let message: Message
@@ -39,6 +40,15 @@ struct MessageBubbleView: View {
                         }
                     }
                     .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+                }
+
+                // Generated images (for assistant messages)
+                if !message.images.isEmpty && !isUser {
+                    VStack(spacing: 8) {
+                        ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
+                            GeneratedImageView(image: image)
+                        }
+                    }
                 }
 
                 // Message bubble with hover actions
@@ -131,6 +141,84 @@ struct MessageBubbleView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             withAnimation {
                 showCopied = false
+            }
+        }
+    }
+}
+
+// MARK: - Generated Image View
+
+struct GeneratedImageView: View {
+    let image: NSImage
+    @State private var isHovered = false
+    @State private var showSaved = false
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: 280, maxHeight: 280)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [.purple.opacity(0.6), .blue.opacity(0.6)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 2
+                        )
+                )
+                .shadow(color: .purple.opacity(0.3), radius: 12, x: 0, y: 4)
+
+            // Save button
+            if isHovered {
+                Button(action: saveImage) {
+                    Image(systemName: showSaved ? "checkmark" : "square.and.arrow.down")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 28, height: 28)
+                        .background(
+                            Circle()
+                                .fill(.black.opacity(0.6))
+                        )
+                }
+                .buttonStyle(.plain)
+                .padding(8)
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
+    }
+
+    private func saveImage() {
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [.png]
+        savePanel.nameFieldStringValue = "generated_image.png"
+
+        savePanel.begin { response in
+            if response == .OK, let url = savePanel.url {
+                if let tiffData = image.tiffRepresentation,
+                   let bitmap = NSBitmapImageRep(data: tiffData),
+                   let pngData = bitmap.representation(using: .png, properties: [:]) {
+                    try? pngData.write(to: url)
+
+                    withAnimation {
+                        showSaved = true
+                    }
+
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        withAnimation {
+                            showSaved = false
+                        }
+                    }
+                }
             }
         }
     }

@@ -128,6 +128,14 @@ class ChatViewModel {
             var fullResponse = ""
             for try await chunk in stream {
                 fullResponse += chunk
+
+                // Check for generated image marker
+                let (processedText, extractedImage) = parseGeneratedImage(from: fullResponse)
+                if let image = extractedImage {
+                    conversation.addImageToLastMessage(image)
+                    fullResponse = processedText
+                }
+
                 conversation.updateLastMessage(content: fullResponse)
             }
 
@@ -272,5 +280,36 @@ class ChatViewModel {
         errorMessage = nil
         // Check clipboard again for quick actions
         checkClipboardForQuickActions()
+    }
+
+    // MARK: - Generated Image Parsing
+
+    /// Parse generated image marker from response and extract the image
+    /// Returns the cleaned text (without the marker) and the extracted image if found
+    private func parseGeneratedImage(from text: String) -> (String, NSImage?) {
+        let pattern = "\\[GENERATED_IMAGE:([A-Za-z0-9+/=]+)\\]"
+
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
+              let match = regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)),
+              let base64Range = Range(match.range(at: 1), in: text) else {
+            return (text, nil)
+        }
+
+        let base64String = String(text[base64Range])
+
+        // Convert base64 to image
+        guard let imageData = Data(base64Encoded: base64String),
+              let image = NSImage(data: imageData) else {
+            return (text, nil)
+        }
+
+        // Remove the marker from text
+        let cleanedText = text.replacingOccurrences(
+            of: "\\[GENERATED_IMAGE:[A-Za-z0-9+/=]+\\]",
+            with: "",
+            options: .regularExpression
+        )
+
+        return (cleanedText, image)
     }
 }

@@ -52,10 +52,36 @@ actor GeminiService: AIProvider {
     }
 
     private let screenshotService = ScreenshotService.shared
+    private let imageGenerationService = ImageGenerationService.shared
+
+    // Image generation request patterns
+    private let imageGenPatterns = [
+        "generate an image",
+        "generate image",
+        "create an image",
+        "create image",
+        "make an image",
+        "make image",
+        "draw me",
+        "draw an image",
+        "draw a picture",
+        "generate a picture",
+        "create a picture",
+        "make a picture",
+        "generate art",
+        "create art",
+        "make art"
+    ]
 
     func sendMessage(_ messages: [Message]) async throws -> AsyncThrowingStream<String, Error> {
         guard !apiKey.isEmpty && !apiKey.contains("YOUR_") else {
             throw GeminiError.noAPIKey
+        }
+
+        // Check if the last user message is an image generation request
+        if let lastUserMessage = messages.last(where: { $0.role == .user }),
+           let imagePrompt = extractImageGenerationPrompt(from: lastUserMessage.content) {
+            return handleImageGeneration(prompt: imagePrompt)
         }
 
         // Convert messages to Gemini format
@@ -176,5 +202,63 @@ actor GeminiService: AIProvider {
         }
 
         return contents
+    }
+
+    // MARK: - Image Generation
+
+    /// Check if a message is requesting image generation and extract the prompt
+    private func extractImageGenerationPrompt(from message: String) -> String? {
+        let lowercased = message.lowercased()
+
+        for pattern in imageGenPatterns {
+            if lowercased.contains(pattern) {
+                // Extract the image description from the message
+                // Try to get everything after "of" or after the pattern
+                if let ofRange = lowercased.range(of: "\(pattern) of ") {
+                    return String(message[ofRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+
+                if let patternRange = lowercased.range(of: pattern) {
+                    let afterPattern = String(message[patternRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !afterPattern.isEmpty {
+                        return afterPattern
+                    }
+                }
+
+                // If we matched but couldn't extract a specific prompt, use the whole message
+                return message
+            }
+        }
+
+        return nil
+    }
+
+    /// Handle image generation request
+    private func handleImageGeneration(prompt: String) -> AsyncThrowingStream<String, Error> {
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    // Yield initial status
+                    continuation.yield("🎨 Generating image...\n\n")
+
+                    // Generate the image
+                    let image = try await imageGenerationService.generateImage(prompt: prompt)
+
+                    // Convert image to base64 for embedding
+                    if let base64 = screenshotService.imageToBase64(image) {
+                        // Yield a special marker that the UI can parse to display the image
+                        continuation.yield("[GENERATED_IMAGE:\(base64)]")
+                        continuation.yield("\n\n✨ Image generated successfully!")
+                    } else {
+                        continuation.yield("⚠️ Image generated but could not be encoded.")
+                    }
+
+                    continuation.finish()
+                } catch {
+                    continuation.yield("\n\n❌ Failed to generate image: \(error.localizedDescription)")
+                    continuation.finish()
+                }
+            }
+        }
     }
 }
