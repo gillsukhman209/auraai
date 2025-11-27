@@ -90,9 +90,23 @@ actor OpenAIService: AIProvider {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
+        // Create system message with current date/time for accurate reminder scheduling
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        dateFormatter.timeZone = TimeZone.current
+        let currentDateTime = dateFormatter.string(from: Date())
+        let timeZone = TimeZone.current.identifier
+        let systemPrompt = "Current date and time: \(currentDateTime) (timezone: \(timeZone)). When the user asks for reminders with relative times like 'in 2 minutes' or 'tomorrow at 5pm', calculate the exact date/time based on the current time provided."
+
         if hasImages {
             // Build Vision API request with support for multiple images
-            let visionMessages = messages
+            var visionMessages: [OpenAIVisionMessage] = []
+
+            // Add system message first
+            visionMessages.append(OpenAIVisionMessage(role: "system", content: [.text(systemPrompt)]))
+
+            // Add user/assistant messages
+            visionMessages += messages
                 .filter { $0.role != .system }
                 .map { message -> OpenAIVisionMessage in
                     var content: [OpenAIVisionContent] = []
@@ -126,7 +140,13 @@ actor OpenAIService: AIProvider {
             urlRequest.httpBody = try JSONEncoder().encode(request)
         } else {
             // Standard text-only request with tools
-            let openAIMessages = messages
+            var openAIMessages: [OpenAIChatMessage] = []
+
+            // Add system message first
+            openAIMessages.append(OpenAIChatMessage(role: "system", content: systemPrompt))
+
+            // Add user/assistant messages
+            openAIMessages += messages
                 .filter { $0.role != .system }
                 .map { OpenAIChatMessage(role: $0.role.rawValue, content: $0.content) }
 
