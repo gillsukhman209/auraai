@@ -187,8 +187,6 @@ struct ChatView: View {
             if isDraggingOver {
                 DropZoneOverlay()
             }
-            // Resize grip in bottom-right corner
-            ResizeGripView()
         }
         .frame(minWidth: 320, minHeight: 200)
         .onDrop(of: [.image, .fileURL], isTargeted: $isDraggingOver) { providers in
@@ -266,68 +264,3 @@ struct DropZoneOverlay: View {
     }
 }
 
-// MARK: - Resize Grip View
-
-struct ResizeGripView: View {
-    @Environment(\.floatingPanel) private var panel
-    @State private var isHovering = false
-    @State private var initialFrame: NSRect = .zero
-
-    var body: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                // Resize grip icon
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.white.opacity(isHovering ? 0.8 : 0.4))
-                    .frame(width: 20, height: 20)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(.black.opacity(isHovering ? 0.4 : 0.2))
-                    )
-                    .padding(6)
-                    .contentShape(Rectangle())
-                    .onHover { hovering in
-                        isHovering = hovering
-                        if hovering {
-                            NSCursor.crosshair.push()
-                        } else {
-                            NSCursor.pop()
-                        }
-                    }
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                guard let window = panel else { return }
-
-                                // Store initial frame on drag start
-                                if value.translation == .zero {
-                                    initialFrame = window.frame
-                                }
-
-                                // Calculate new size from initial frame + translation
-                                let newWidth = max(320, initialFrame.width + value.translation.width)
-                                let newHeight = max(200, initialFrame.height - value.translation.height)
-                                let newOriginY = initialFrame.origin.y + (initialFrame.height - newHeight)
-
-                                window.setFrame(
-                                    NSRect(
-                                        x: initialFrame.origin.x,
-                                        y: newOriginY,
-                                        width: newWidth,
-                                        height: newHeight
-                                    ),
-                                    display: true,
-                                    animate: false
-                                )
-                            }
-                            .onEnded { _ in
-                                initialFrame = .zero
-                            }
-                    )
-            }
-        }
-    }
-}

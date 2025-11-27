@@ -20,7 +20,7 @@ class FloatingPanel<Content: View>: NSPanel {
 
         super.init(
             contentRect: contentRect,
-            styleMask: [.nonactivatingPanel, .fullSizeContentView, .borderless, .resizable],
+            styleMask: [.titled, .nonactivatingPanel, .fullSizeContentView, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -31,7 +31,7 @@ class FloatingPanel<Content: View>: NSPanel {
         collectionBehavior.insert(.fullScreenAuxiliary)
         collectionBehavior.insert(.canJoinAllSpaces)
 
-        // Title bar configuration
+        // Title bar configuration - make it invisible but keep resize functionality
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
 
@@ -47,6 +47,10 @@ class FloatingPanel<Content: View>: NSPanel {
         standardWindowButton(.closeButton)?.isHidden = true
         standardWindowButton(.miniaturizeButton)?.isHidden = true
         standardWindowButton(.zoomButton)?.isHidden = true
+
+        // Set min/max size for resizing
+        minSize = NSSize(width: 320, height: 200)
+        maxSize = NSSize(width: 800, height: 1000)
 
         // Create hosting view with transparent background
         let hostingView = NSHostingView(
