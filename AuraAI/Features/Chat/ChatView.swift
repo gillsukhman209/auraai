@@ -64,26 +64,57 @@ struct ChatView: View {
                 .padding(.horizontal, 8)
                 .padding(.top, 8)
 
+                // Quick Actions (shown when clipboard has text and no conversation)
+                if viewModel.showQuickActions {
+                    QuickActionsView(
+                        clipboardText: viewModel.clipboardText,
+                        onActionSelected: { action in
+                            Task { await viewModel.executeQuickAction(action) }
+                        },
+                        onDismiss: viewModel.dismissQuickActions
+                    )
+                    .padding(.horizontal, 12)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
+
                 // Messages - floating bubbles
-                ScrollViewReader { proxy in
-                    ScrollView(showsIndicators: false) {
-                        LazyVStack(spacing: 16) {
-                            ForEach(viewModel.conversation.messages) { message in
-                                MessageBubbleView(message: message)
-                                    .id(message.id)
+                if !viewModel.conversation.messages.isEmpty || !viewModel.showQuickActions {
+                    ScrollViewReader { proxy in
+                        ScrollView(showsIndicators: false) {
+                            LazyVStack(spacing: 16) {
+                                // Empty state hint
+                                if viewModel.conversation.messages.isEmpty && !viewModel.showQuickActions {
+                                    VStack(spacing: 8) {
+                                        Image(systemName: "sparkles")
+                                            .font(.system(size: 32))
+                                            .foregroundColor(.white.opacity(0.3))
+                                        Text("Ask anything...")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(.white.opacity(0.4))
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, 40)
+                                }
+
+                                ForEach(viewModel.conversation.messages) { message in
+                                    MessageBubbleView(message: message)
+                                        .id(message.id)
+                                }
                             }
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 8)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 8)
-                    }
-                    .onChange(of: viewModel.conversation.messages.count) { _, _ in
-                        if let lastMessage = viewModel.conversation.messages.last {
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        .onChange(of: viewModel.conversation.messages.count) { _, _ in
+                            if let lastMessage = viewModel.conversation.messages.last {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                                }
                             }
                         }
                     }
                 }
+
+                Spacer(minLength: 0)
 
                 // Error message
                 if let error = viewModel.errorMessage {
@@ -112,5 +143,8 @@ struct ChatView: View {
             }
         }
         .frame(minWidth: 320, minHeight: 200)
+        .onAppear {
+            viewModel.checkClipboardForQuickActions()
+        }
     }
 }

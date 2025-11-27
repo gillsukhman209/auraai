@@ -18,6 +18,10 @@ class ChatViewModel {
     var errorMessage: String?
     var isProcessing: Bool = false
 
+    // Quick Actions state
+    var showQuickActions: Bool = false
+    var clipboardText: String?
+
     init(
         openAIService: OpenAIService,
         clipboardService: ClipboardService,
@@ -28,10 +32,38 @@ class ChatViewModel {
         self.conversation = conversation
     }
 
+    /// Check clipboard and show quick actions if text is available
+    func checkClipboardForQuickActions() {
+        if let text = clipboardService.readText(),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           conversation.messages.isEmpty {
+            clipboardText = text
+            showQuickActions = true
+        }
+    }
+
+    /// Execute a quick action with clipboard text
+    @MainActor
+    func executeQuickAction(_ action: QuickAction) async {
+        guard let text = clipboardText else { return }
+
+        showQuickActions = false
+        inputText = action.prompt + text
+        await sendMessage()
+    }
+
+    /// Dismiss quick actions
+    func dismissQuickActions() {
+        showQuickActions = false
+    }
+
     @MainActor
     func sendMessage() async {
         let trimmedInput = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedInput.isEmpty else { return }
+
+        // Hide quick actions if shown
+        showQuickActions = false
 
         // Add user message
         let userMessage = Message(role: .user, content: trimmedInput)
@@ -85,5 +117,7 @@ class ChatViewModel {
     func clearConversation() {
         conversation.clear()
         errorMessage = nil
+        // Check clipboard again for quick actions
+        checkClipboardForQuickActions()
     }
 }
