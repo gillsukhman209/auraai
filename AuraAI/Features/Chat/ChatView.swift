@@ -59,7 +59,7 @@ struct ChatView: View {
                     }
                     .buttonStyle(.plain)
                     .onHover { isHoveringClose = $0 }
-                    .help("Close (Cmd+Shift+Space)")
+                    .help("Close (Esc)")
                 }
                 .padding(.horizontal, 8)
                 .padding(.top, 8)
@@ -77,44 +77,59 @@ struct ChatView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
-                // Messages - floating bubbles
-                if !viewModel.conversation.messages.isEmpty || !viewModel.showQuickActions {
-                    ScrollViewReader { proxy in
-                        ScrollView(showsIndicators: false) {
-                            LazyVStack(spacing: 16) {
-                                // Empty state hint
-                                if viewModel.conversation.messages.isEmpty && !viewModel.showQuickActions {
-                                    VStack(spacing: 8) {
-                                        Image(systemName: "sparkles")
-                                            .font(.system(size: 32))
-                                            .foregroundColor(.white.opacity(0.3))
-                                        Text("Ask anything...")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(.white.opacity(0.4))
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.top, 40)
-                                }
+                // Messages - floating bubbles (always show ScrollView for proper layout)
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(spacing: 16) {
+                            // Empty state hint
+                            if viewModel.conversation.messages.isEmpty && !viewModel.showQuickActions {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "sparkles")
+                                        .font(.system(size: 36, weight: .light))
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [.blue.opacity(0.6), .purple.opacity(0.6)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
 
-                                ForEach(viewModel.conversation.messages) { message in
-                                    MessageBubbleView(message: message)
-                                        .id(message.id)
+                                    Text("Ask anything...")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.5))
+
+                                    Text("Copy text to see quick actions")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.white.opacity(0.3))
                                 }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 40)
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 8)
+
+                            ForEach(viewModel.conversation.messages) { message in
+                                MessageBubbleView(message: message)
+                                    .id(message.id)
+                            }
                         }
-                        .onChange(of: viewModel.conversation.messages.count) { _, _ in
-                            if let lastMessage = viewModel.conversation.messages.last {
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                                }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
+                    }
+                    .scrollContentBackground(.hidden)
+                    .onChange(of: viewModel.conversation.messages.count) { _, _ in
+                        if let lastMessage = viewModel.conversation.messages.last {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
                             }
                         }
                     }
+                    // Also scroll when content changes (for streaming)
+                    .onChange(of: viewModel.conversation.messages.last?.content) { _, _ in
+                        if let lastMessage = viewModel.conversation.messages.last {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        }
+                    }
                 }
-
-                Spacer(minLength: 0)
+                .frame(maxHeight: .infinity)
 
                 // Error message
                 if let error = viewModel.errorMessage {
@@ -145,6 +160,10 @@ struct ChatView: View {
         .frame(minWidth: 320, minHeight: 200)
         .onAppear {
             viewModel.checkClipboardForQuickActions()
+        }
+        .onKeyPress(.escape) {
+            panel?.close()
+            return .handled
         }
     }
 }

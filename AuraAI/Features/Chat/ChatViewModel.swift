@@ -102,8 +102,10 @@ class ChatViewModel {
     }
 
     func pasteFromClipboard() {
-        if let text = clipboardService.readText() {
-            inputText = text
+        if let text = clipboardService.readText(),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            clipboardText = text
+            showQuickActions = true
         }
     }
 
