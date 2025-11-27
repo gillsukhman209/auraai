@@ -47,6 +47,35 @@ actor OpenAIService: AIProvider {
     }
 
     private let screenshotService = ScreenshotService.shared
+    private let remindersService = RemindersService.shared
+
+    // MARK: - Tool Definitions
+
+    private var availableTools: [OpenAITool] {
+        [
+            OpenAITool(function: OpenAIFunctionDefinition(
+                name: "create_reminder",
+                description: "Create a reminder in the user's Reminders app. Use this when the user asks to be reminded about something.",
+                parameters: OpenAIFunctionParameters(
+                    properties: [
+                        "title": OpenAIParameterProperty(
+                            type: "string",
+                            description: "The title/content of the reminder (e.g., 'Go to gym', 'Call mom')"
+                        ),
+                        "due_date": OpenAIParameterProperty(
+                            type: "string",
+                            description: "The due date/time in ISO 8601 format (e.g., '2025-11-27T17:00:00') or natural time like '17:00' or '5pm'"
+                        ),
+                        "notes": OpenAIParameterProperty(
+                            type: "string",
+                            description: "Optional additional notes for the reminder"
+                        )
+                    ],
+                    required: ["title"]
+                )
+            ))
+        ]
+    }
 
     func sendMessage(_ messages: [Message]) async throws -> AsyncThrowingStream<String, Error> {
         guard !apiKey.isEmpty && !apiKey.contains("YOUR_") else {
@@ -91,11 +120,12 @@ actor OpenAIService: AIProvider {
                 model: AppConstants.API.openAIModel,
                 messages: visionMessages,
                 maxTokens: AppConstants.API.maxTokens,
-                stream: true
+                stream: true,
+                tools: availableTools
             )
             urlRequest.httpBody = try JSONEncoder().encode(request)
         } else {
-            // Standard text-only request
+            // Standard text-only request with tools
             let openAIMessages = messages
                 .filter { $0.role != .system }
                 .map { OpenAIChatMessage(role: $0.role.rawValue, content: $0.content) }
@@ -104,7 +134,8 @@ actor OpenAIService: AIProvider {
                 model: AppConstants.API.openAIModel,
                 messages: openAIMessages,
                 maxTokens: AppConstants.API.maxTokens,
-                stream: true
+                stream: true,
+                tools: availableTools
             )
             urlRequest.httpBody = try JSONEncoder().encode(request)
         }
@@ -128,26 +159,53 @@ actor OpenAIService: AIProvider {
         return AsyncThrowingStream { continuation in
             Task {
                 do {
+                    var toolCalls: [Int: ToolCall] = [:]
+                    var finishReason: String?
+
                     for try await line in bytes.lines {
                         if line.hasPrefix("data: ") {
                             let jsonString = String(line.dropFirst(6))
 
                             // Check for stream end
                             if jsonString == "[DONE]" {
-                                continuation.finish()
-                                return
+                                break
                             }
 
                             // Parse the chunk
                             if let data = jsonString.data(using: .utf8) {
                                 do {
                                     let chunk = try JSONDecoder().decode(OpenAIStreamChunk.self, from: data)
+
+                                    // Handle regular content
                                     if let content = chunk.choices?.first?.delta?.content {
                                         continuation.yield(content)
                                     }
-                                    if chunk.choices?.first?.finishReason != nil {
-                                        continuation.finish()
-                                        return
+
+                                    // Handle tool calls
+                                    if let deltaToolCalls = chunk.choices?.first?.delta?.toolCalls {
+                                        print("🔧 Received tool call delta: \(deltaToolCalls.count) calls")
+                                        for toolCallDelta in deltaToolCalls {
+                                            let index = toolCallDelta.index
+                                            if toolCalls[index] == nil {
+                                                toolCalls[index] = ToolCall()
+                                            }
+                                            if let id = toolCallDelta.id {
+                                                toolCalls[index]?.id = id
+                                                print("🔧 Tool ID: \(id)")
+                                            }
+                                            if let name = toolCallDelta.function?.name {
+                                                toolCalls[index]?.functionName = name
+                                                print("🔧 Tool name: \(name)")
+                                            }
+                                            if let args = toolCallDelta.function?.arguments {
+                                                toolCalls[index]?.arguments += args
+                                            }
+                                        }
+                                    }
+
+                                    if let reason = chunk.choices?.first?.finishReason {
+                                        finishReason = reason
+                                        print("🔧 Finish reason: \(reason)")
                                     }
                                 } catch {
                                     // Skip malformed chunks
@@ -156,11 +214,64 @@ actor OpenAIService: AIProvider {
                             }
                         }
                     }
+
+                    // If we have tool calls to execute
+                    print("🔧 Stream ended. Finish reason: \(finishReason ?? "nil"), tool calls: \(toolCalls.count)")
+                    if finishReason == "tool_calls" && !toolCalls.isEmpty {
+                        print("🔧 Executing \(toolCalls.count) tool calls...")
+                        for (_, toolCall) in toolCalls.sorted(by: { $0.key < $1.key }) {
+                            print("🔧 Executing: \(toolCall.functionName) with args: \(toolCall.arguments)")
+                            let result = await self.executeToolCall(toolCall)
+                            continuation.yield(result)
+                        }
+                    }
+
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }
             }
+        }
+    }
+
+    // MARK: - Tool Execution
+
+    private func executeToolCall(_ toolCall: ToolCall) async -> String {
+        switch toolCall.functionName {
+        case "create_reminder":
+            return await executeCreateReminder(arguments: toolCall.arguments)
+        default:
+            return "\n\n⚠️ Unknown tool: \(toolCall.functionName)"
+        }
+    }
+
+    private func executeCreateReminder(arguments: String) async -> String {
+        // Parse the JSON arguments
+        guard let data = arguments.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let title = json["title"] as? String else {
+            return "\n\n❌ Failed to parse reminder details."
+        }
+
+        let dueDateString = json["due_date"] as? String
+        let notes = json["notes"] as? String
+
+        // Parse the due date if provided
+        var dueDate: Date?
+        if let dueDateString = dueDateString {
+            dueDate = RemindersService.parseDate(dueDateString)
+        }
+
+        // Create the reminder
+        do {
+            let result = try await remindersService.createReminder(
+                title: title,
+                dueDate: dueDate,
+                notes: notes
+            )
+            return "\n\n✅ \(result)"
+        } catch {
+            return "\n\n❌ \(error.localizedDescription)"
         }
     }
 }

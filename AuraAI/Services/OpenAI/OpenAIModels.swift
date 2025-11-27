@@ -14,13 +14,39 @@ struct OpenAIChatRequest: Encodable {
     let messages: [OpenAIChatMessage]
     let maxTokens: Int?
     let stream: Bool
+    let tools: [OpenAITool]?
 
     enum CodingKeys: String, CodingKey {
         case model
         case messages
         case maxTokens = "max_tokens"
         case stream
+        case tools
     }
+}
+
+// MARK: - Tool Definitions
+
+struct OpenAITool: Encodable {
+    let type: String = "function"
+    let function: OpenAIFunctionDefinition
+}
+
+struct OpenAIFunctionDefinition: Encodable {
+    let name: String
+    let description: String
+    let parameters: OpenAIFunctionParameters
+}
+
+struct OpenAIFunctionParameters: Encodable {
+    let type: String = "object"
+    let properties: [String: OpenAIParameterProperty]
+    let required: [String]
+}
+
+struct OpenAIParameterProperty: Encodable {
+    let type: String
+    let description: String
 }
 
 // Simple text-only message
@@ -35,12 +61,14 @@ struct OpenAIVisionRequest: Encodable {
     let messages: [OpenAIVisionMessage]
     let maxTokens: Int?
     let stream: Bool
+    let tools: [OpenAITool]?
 
     enum CodingKeys: String, CodingKey {
         case model
         case messages
         case maxTokens = "max_tokens"
         case stream
+        case tools
     }
 }
 
@@ -105,6 +133,40 @@ struct OpenAIChatResponse: Decodable {
 struct DeltaMessage: Decodable {
     let role: String?
     let content: String?
+    let toolCalls: [ToolCallDelta]?
+
+    enum CodingKeys: String, CodingKey {
+        case role
+        case content
+        case toolCalls = "tool_calls"
+    }
+}
+
+// MARK: - Tool Call Response Models
+
+struct ToolCallDelta: Decodable {
+    let index: Int
+    let id: String?
+    let type: String?
+    let function: FunctionCallDelta?
+}
+
+struct FunctionCallDelta: Decodable {
+    let name: String?
+    let arguments: String?
+}
+
+/// Assembled tool call from streaming deltas
+struct ToolCall {
+    var id: String
+    var functionName: String
+    var arguments: String
+
+    init() {
+        self.id = ""
+        self.functionName = ""
+        self.arguments = ""
+    }
 }
 
 struct OpenAIUsage: Decodable {
