@@ -23,6 +23,7 @@ struct ChatView: View {
         self.appState = appState
         _viewModel = State(initialValue: ChatViewModel(
             openAIService: appState.openAIService,
+            geminiService: appState.geminiService,
             clipboardService: appState.clipboardService,
             panelController: appState.panelController,
             conversation: appState.conversation
@@ -152,11 +153,12 @@ struct ChatView: View {
                         )
                 }
 
-                // Screenshot preview (shown when there's a pending screenshot)
-                if let screenshot = viewModel.pendingScreenshot {
-                    ScreenshotPreviewView(
-                        image: screenshot,
-                        onRemove: viewModel.clearScreenshot
+                // Images preview (shown when there are pending images)
+                if !viewModel.pendingImages.isEmpty {
+                    ImagesPreviewView(
+                        images: viewModel.pendingImages,
+                        onRemove: { index in viewModel.removeImage(at: index) },
+                        onClearAll: viewModel.clearAllImages
                     )
                     .padding(.horizontal, 12)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -165,6 +167,7 @@ struct ChatView: View {
                 // Floating input bar
                 ChatInputView(
                     text: $viewModel.inputText,
+                    selectedModel: $viewModel.selectedModel,
                     onSend: {
                         Task { await viewModel.sendMessage() }
                     },
@@ -173,7 +176,7 @@ struct ChatView: View {
                         Task { await viewModel.captureScreenshot() }
                     },
                     isDisabled: viewModel.isProcessing,
-                    hasScreenshot: viewModel.pendingScreenshot != nil,
+                    imageCount: viewModel.pendingImages.count,
                     isFocused: $isInputFocused
                 )
                 .padding(.horizontal, 12)
@@ -184,6 +187,8 @@ struct ChatView: View {
             if isDraggingOver {
                 DropZoneOverlay()
             }
+            // Resize grip in bottom-right corner
+            ResizeGripView()
         }
         .frame(minWidth: 320, minHeight: 200)
         .onDrop(of: [.image, .fileURL], isTargeted: $isDraggingOver) { providers in
@@ -191,11 +196,11 @@ struct ChatView: View {
         }
         .onAppear {
             viewModel.checkClipboardForQuickActions()
-            consumeScreenshotFromHotkey()
+            consumeScreenshotsFromHotkey()
         }
-        .onChange(of: appState.pendingScreenshotFromHotkey) { _, newValue in
-            if newValue != nil {
-                consumeScreenshotFromHotkey()
+        .onChange(of: appState.pendingScreenshotsFromHotkey.count) { _, newCount in
+            if newCount > 0 {
+                consumeScreenshotsFromHotkey()
             }
         }
         .onKeyPress(.escape) {
@@ -204,15 +209,17 @@ struct ChatView: View {
         }
     }
 
-    /// Transfer screenshot from hotkey to viewModel and focus input
-    private func consumeScreenshotFromHotkey() {
-        if let screenshot = appState.pendingScreenshotFromHotkey {
-            viewModel.pendingScreenshot = screenshot
-            appState.pendingScreenshotFromHotkey = nil
-            // Focus input after a brief delay to ensure view is ready
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                isInputFocused = true
-            }
+    /// Transfer screenshots from hotkey to viewModel and focus input
+    private func consumeScreenshotsFromHotkey() {
+        guard !appState.pendingScreenshotsFromHotkey.isEmpty else { return }
+
+        // Append all pending screenshots to viewModel
+        viewModel.pendingImages.append(contentsOf: appState.pendingScreenshotsFromHotkey)
+        appState.pendingScreenshotsFromHotkey = []
+
+        // Focus input after a brief delay to ensure view is ready
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            isInputFocused = true
         }
     }
 }
@@ -256,5 +263,71 @@ struct DropZoneOverlay: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: true)
+    }
+}
+
+// MARK: - Resize Grip View
+
+struct ResizeGripView: View {
+    @Environment(\.floatingPanel) private var panel
+    @State private var isHovering = false
+    @State private var initialFrame: NSRect = .zero
+
+    var body: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                // Resize grip icon
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white.opacity(isHovering ? 0.8 : 0.4))
+                    .frame(width: 20, height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(.black.opacity(isHovering ? 0.4 : 0.2))
+                    )
+                    .padding(6)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        isHovering = hovering
+                        if hovering {
+                            NSCursor.crosshair.push()
+                        } else {
+                            NSCursor.pop()
+                        }
+                    }
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                guard let window = panel else { return }
+
+                                // Store initial frame on drag start
+                                if value.translation == .zero {
+                                    initialFrame = window.frame
+                                }
+
+                                // Calculate new size from initial frame + translation
+                                let newWidth = max(320, initialFrame.width + value.translation.width)
+                                let newHeight = max(200, initialFrame.height - value.translation.height)
+                                let newOriginY = initialFrame.origin.y + (initialFrame.height - newHeight)
+
+                                window.setFrame(
+                                    NSRect(
+                                        x: initialFrame.origin.x,
+                                        y: newOriginY,
+                                        width: newWidth,
+                                        height: newHeight
+                                    ),
+                                    display: true,
+                                    animate: false
+                                )
+                            }
+                            .onEnded { _ in
+                                initialFrame = .zero
+                            }
+                    )
+            }
+        }
     }
 }

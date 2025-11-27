@@ -20,7 +20,7 @@ class FloatingPanel<Content: View>: NSPanel {
 
         super.init(
             contentRect: contentRect,
-            styleMask: [.nonactivatingPanel, .fullSizeContentView, .borderless],
+            styleMask: [.nonactivatingPanel, .fullSizeContentView, .borderless, .resizable],
             backing: .buffered,
             defer: false
         )

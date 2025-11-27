@@ -53,8 +53,8 @@ actor OpenAIService: AIProvider {
             throw OpenAIError.noAPIKey
         }
 
-        // Check if any message has an image - use Vision API if so
-        let hasImages = messages.contains { $0.image != nil }
+        // Check if any message has images - use Vision API if so
+        let hasImages = messages.contains { !$0.images.isEmpty }
 
         var urlRequest = URLRequest(url: baseURL)
         urlRequest.httpMethod = "POST"
@@ -62,24 +62,26 @@ actor OpenAIService: AIProvider {
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
         if hasImages {
-            // Build Vision API request
+            // Build Vision API request with support for multiple images
             let visionMessages = messages
                 .filter { $0.role != .system }
                 .map { message -> OpenAIVisionMessage in
                     var content: [OpenAIVisionContent] = []
 
-                    // Add image if present
-                    if let image = message.image,
-                       let base64 = screenshotService.imageToBase64(image) {
-                        content.append(.imageURL(base64))
+                    // Add all images from this message
+                    for image in message.images {
+                        if let base64 = screenshotService.imageToBase64(image) {
+                            content.append(.imageURL(base64))
+                        }
                     }
 
                     // Add text content
                     if !message.content.isEmpty {
                         content.append(.text(message.content))
-                    } else if message.image != nil {
-                        // Default prompt if only image
-                        content.append(.text("What's in this image?"))
+                    } else if !message.images.isEmpty {
+                        // Default prompt if only images
+                        let imageText = message.images.count == 1 ? "this image" : "these \(message.images.count) images"
+                        content.append(.text("What's in \(imageText)?"))
                     }
 
                     return OpenAIVisionMessage(role: message.role.rawValue, content: content)

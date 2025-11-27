@@ -12,6 +12,7 @@ import SwiftUI
 @Observable
 class ChatViewModel {
     private let openAIService: OpenAIService
+    private let geminiService: GeminiService
     private let clipboardService: ClipboardService
     private let screenshotService: ScreenshotService
     private weak var panelController: FloatingPanelController?
@@ -21,25 +22,40 @@ class ChatViewModel {
     var errorMessage: String?
     var isProcessing: Bool = false
 
+    // Model selection
+    var selectedModel: AIModelType = .gpt4o
+
     // Quick Actions state
     var showQuickActions: Bool = false
     var clipboardText: String?
 
-    // Screenshot state
-    var pendingScreenshot: NSImage?
+    // Multiple images state (screenshots + drag & drop)
+    var pendingImages: [NSImage] = []
 
     init(
         openAIService: OpenAIService,
+        geminiService: GeminiService,
         clipboardService: ClipboardService,
         screenshotService: ScreenshotService = .shared,
         panelController: FloatingPanelController? = nil,
         conversation: Conversation
     ) {
         self.openAIService = openAIService
+        self.geminiService = geminiService
         self.clipboardService = clipboardService
         self.screenshotService = screenshotService
         self.panelController = panelController
         self.conversation = conversation
+    }
+
+    /// Get the currently selected AI provider
+    private var currentProvider: any AIProvider {
+        switch selectedModel {
+        case .gpt4o:
+            return openAIService
+        case .gemini:
+            return geminiService
+        }
     }
 
     /// Check clipboard and show quick actions if text is available
@@ -71,21 +87,23 @@ class ChatViewModel {
     func sendMessage() async {
         let trimmedInput = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Allow sending with just a screenshot (no text required)
-        guard !trimmedInput.isEmpty || pendingScreenshot != nil else { return }
+        // Allow sending with just images (no text required)
+        guard !trimmedInput.isEmpty || !pendingImages.isEmpty else { return }
 
         // Hide quick actions if shown
         showQuickActions = false
 
-        // Add user message with optional screenshot
+        // Add user message with optional images
+        let imageCount = pendingImages.count
+        let defaultPrompt = imageCount == 1 ? "What's in this image?" : "What's in these \(imageCount) images?"
         let userMessage = Message(
             role: .user,
-            content: trimmedInput.isEmpty ? "What's in this screenshot?" : trimmedInput,
-            image: pendingScreenshot
+            content: trimmedInput.isEmpty ? defaultPrompt : trimmedInput,
+            images: pendingImages
         )
         conversation.addMessage(userMessage)
         inputText = ""
-        pendingScreenshot = nil
+        pendingImages = []
 
         // Create placeholder for assistant response
         let assistantMessage = Message(role: .assistant, content: "", isStreaming: true)
@@ -95,7 +113,7 @@ class ChatViewModel {
         errorMessage = nil
 
         do {
-            let stream = try await openAIService.sendMessage(
+            let stream = try await currentProvider.sendMessage(
                 Array(conversation.messages.dropLast())
             )
 
@@ -118,23 +136,36 @@ class ChatViewModel {
         isProcessing = false
     }
 
-    // MARK: - Screenshot Methods
+    // MARK: - Screenshot/Image Methods
 
-    /// Capture a screenshot of the full screen (excludes the AuraAI panel automatically)
+    /// Capture a screenshot and add to pending images
     @MainActor
     func captureScreenshot() async {
         do {
             // Capture screenshot - AuraAI windows are automatically excluded
-            let image = try await screenshotService.captureFullScreen()
-            pendingScreenshot = image
+            let image = try await screenshotService.captureSelectedArea()
+            pendingImages.append(image)
+        } catch ScreenshotService.ScreenshotError.cancelled {
+            // User cancelled - do nothing
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    /// Clear the pending screenshot
-    func clearScreenshot() {
-        pendingScreenshot = nil
+    /// Add an image to pending images
+    func addImage(_ image: NSImage) {
+        pendingImages.append(image)
+    }
+
+    /// Remove a specific image by index
+    func removeImage(at index: Int) {
+        guard index >= 0 && index < pendingImages.count else { return }
+        pendingImages.remove(at: index)
+    }
+
+    /// Clear all pending images
+    func clearAllImages() {
+        pendingImages = []
     }
 
     // MARK: - Drag & Drop Methods
@@ -145,8 +176,10 @@ class ChatViewModel {
         "public.tiff", "public.bmp", "com.apple.icns"
     ]
 
-    /// Handle dropped image files
+    /// Handle dropped image files - supports multiple images
     func handleDroppedImage(providers: [NSItemProvider]) -> Bool {
+        var handled = false
+
         for provider in providers {
             // Check for file URL first
             if provider.hasItemConformingToTypeIdentifier("public.file-url") {
@@ -159,10 +192,11 @@ class ChatViewModel {
                     let resizedImage = self?.resizeImageIfNeeded(image, maxDimension: 2048) ?? image
 
                     DispatchQueue.main.async {
-                        self?.pendingScreenshot = resizedImage
+                        self?.pendingImages.append(resizedImage)
                     }
                 }
-                return true
+                handled = true
+                continue
             }
 
             // Check for image data directly
@@ -182,14 +216,15 @@ class ChatViewModel {
                         let resizedImage = self?.resizeImageIfNeeded(loadedImage, maxDimension: 2048) ?? loadedImage
 
                         DispatchQueue.main.async {
-                            self?.pendingScreenshot = resizedImage
+                            self?.pendingImages.append(resizedImage)
                         }
                     }
-                    return true
+                    handled = true
+                    break
                 }
             }
         }
-        return false
+        return handled
     }
 
     /// Resize image if larger than max dimension

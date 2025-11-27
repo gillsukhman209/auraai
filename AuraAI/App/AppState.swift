@@ -14,6 +14,7 @@ class AppState {
     // Services
     let clipboardService = ClipboardService.shared
     let openAIService = OpenAIService()
+    let geminiService = GeminiService()
     let screenshotService = ScreenshotService.shared
 
     // Controllers
@@ -24,7 +25,8 @@ class AppState {
     var conversation = Conversation()
 
     // Shared screenshot state (set by hotkey, consumed by ChatView)
-    var pendingScreenshotFromHotkey: NSImage?
+    // Using array to support multiple screenshots before sending
+    var pendingScreenshotsFromHotkey: [NSImage] = []
 
     init() {
         setupHotKeys()
@@ -49,7 +51,7 @@ class AppState {
         do {
             // Use native screencapture tool for area selection
             let image = try await screenshotService.captureSelectedArea()
-            pendingScreenshotFromHotkey = image
+            pendingScreenshotsFromHotkey.append(image)
             panelController.show()
         } catch ScreenshotService.ScreenshotError.cancelled {
             // User cancelled the selection - do nothing

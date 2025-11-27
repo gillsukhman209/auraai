@@ -20,7 +20,7 @@ struct Message: Identifiable, Equatable {
     var content: String
     let timestamp: Date
     var isStreaming: Bool
-    var image: NSImage?
+    var images: [NSImage]
 
     init(
         id: UUID = UUID(),
@@ -28,14 +28,14 @@ struct Message: Identifiable, Equatable {
         content: String,
         timestamp: Date = Date(),
         isStreaming: Bool = false,
-        image: NSImage? = nil
+        images: [NSImage] = []
     ) {
         self.id = id
         self.role = role
         self.content = content
         self.timestamp = timestamp
         self.isStreaming = isStreaming
-        self.image = image
+        self.images = images
     }
 
     static func == (lhs: Message, rhs: Message) -> Bool {
@@ -44,6 +44,6 @@ struct Message: Identifiable, Equatable {
         lhs.content == rhs.content &&
         lhs.timestamp == rhs.timestamp &&
         lhs.isStreaming == rhs.isStreaming &&
-        lhs.image === rhs.image
+        lhs.images.count == rhs.images.count
     }
 }

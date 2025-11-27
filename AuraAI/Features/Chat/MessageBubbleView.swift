@@ -23,18 +23,22 @@ struct MessageBubbleView: View {
             if isUser { Spacer(minLength: 60) }
 
             VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
-                // Screenshot thumbnail (for user messages with images)
-                if let image = message.image, isUser {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(maxWidth: 200, maxHeight: 120)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(.white.opacity(0.2), lineWidth: 1)
-                        )
-                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+                // Image thumbnails (for user messages with images)
+                if !message.images.isEmpty && isUser {
+                    HStack(spacing: 6) {
+                        ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: message.images.count == 1 ? 200 : 100, height: message.images.count == 1 ? 120 : 70)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(.white.opacity(0.2), lineWidth: 1)
+                                )
+                        }
+                    }
+                    .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
                 }
 
                 // Message bubble with hover actions
