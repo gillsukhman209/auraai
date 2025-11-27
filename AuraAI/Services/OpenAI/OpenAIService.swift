@@ -5,6 +5,7 @@
 //  Created by Sukhman Singh on 11/26/25.
 //
 
+import AppKit
 import Foundation
 
 enum OpenAIError: Error, LocalizedError {
@@ -45,27 +46,66 @@ actor OpenAIService: AIProvider {
         AppConstants.API.openAIAPIKey
     }
 
+    private let screenshotService = ScreenshotService.shared
+
     func sendMessage(_ messages: [Message]) async throws -> AsyncThrowingStream<String, Error> {
         guard !apiKey.isEmpty && !apiKey.contains("YOUR_") else {
             throw OpenAIError.noAPIKey
         }
 
-        let openAIMessages = messages
-            .filter { $0.role != .system }
-            .map { OpenAIChatMessage(role: $0.role.rawValue, content: $0.content) }
-
-        let request = OpenAIChatRequest(
-            model: AppConstants.API.openAIModel,
-            messages: openAIMessages,
-            maxTokens: AppConstants.API.maxTokens,
-            stream: true
-        )
+        // Check if any message has an image - use Vision API if so
+        let hasImages = messages.contains { $0.image != nil }
 
         var urlRequest = URLRequest(url: baseURL)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        urlRequest.httpBody = try JSONEncoder().encode(request)
+
+        if hasImages {
+            // Build Vision API request
+            let visionMessages = messages
+                .filter { $0.role != .system }
+                .map { message -> OpenAIVisionMessage in
+                    var content: [OpenAIVisionContent] = []
+
+                    // Add image if present
+                    if let image = message.image,
+                       let base64 = screenshotService.imageToBase64(image) {
+                        content.append(.imageURL(base64))
+                    }
+
+                    // Add text content
+                    if !message.content.isEmpty {
+                        content.append(.text(message.content))
+                    } else if message.image != nil {
+                        // Default prompt if only image
+                        content.append(.text("What's in this image?"))
+                    }
+
+                    return OpenAIVisionMessage(role: message.role.rawValue, content: content)
+                }
+
+            let request = OpenAIVisionRequest(
+                model: AppConstants.API.openAIModel,
+                messages: visionMessages,
+                maxTokens: AppConstants.API.maxTokens,
+                stream: true
+            )
+            urlRequest.httpBody = try JSONEncoder().encode(request)
+        } else {
+            // Standard text-only request
+            let openAIMessages = messages
+                .filter { $0.role != .system }
+                .map { OpenAIChatMessage(role: $0.role.rawValue, content: $0.content) }
+
+            let request = OpenAIChatRequest(
+                model: AppConstants.API.openAIModel,
+                messages: openAIMessages,
+                maxTokens: AppConstants.API.maxTokens,
+                stream: true
+            )
+            urlRequest.httpBody = try JSONEncoder().encode(request)
+        }
 
         let (bytes, response) = try await URLSession.shared.bytes(for: urlRequest)
 

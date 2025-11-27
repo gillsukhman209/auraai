@@ -17,6 +17,7 @@ struct ChatView: View {
         _viewModel = State(initialValue: ChatViewModel(
             openAIService: appState.openAIService,
             clipboardService: appState.clipboardService,
+            panelController: appState.panelController,
             conversation: appState.conversation
         ))
     }
@@ -144,6 +145,16 @@ struct ChatView: View {
                         )
                 }
 
+                // Screenshot preview (shown when there's a pending screenshot)
+                if let screenshot = viewModel.pendingScreenshot {
+                    ScreenshotPreviewView(
+                        image: screenshot,
+                        onRemove: viewModel.clearScreenshot
+                    )
+                    .padding(.horizontal, 12)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+
                 // Floating input bar
                 ChatInputView(
                     text: $viewModel.inputText,
@@ -151,7 +162,11 @@ struct ChatView: View {
                         Task { await viewModel.sendMessage() }
                     },
                     onPaste: viewModel.pasteFromClipboard,
-                    isDisabled: viewModel.isProcessing
+                    onScreenshot: {
+                        Task { await viewModel.captureScreenshot() }
+                    },
+                    isDisabled: viewModel.isProcessing,
+                    hasScreenshot: viewModel.pendingScreenshot != nil
                 )
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)

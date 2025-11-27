@@ -13,6 +13,7 @@ class AppState {
     // Services
     let clipboardService = ClipboardService.shared
     let openAIService = OpenAIService()
+    let screenshotService = ScreenshotService.shared
 
     // Controllers
     let panelController = FloatingPanelController()

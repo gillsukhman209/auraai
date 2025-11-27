@@ -23,9 +23,58 @@ struct OpenAIChatRequest: Encodable {
     }
 }
 
+// Simple text-only message
 struct OpenAIChatMessage: Codable {
     let role: String
     let content: String
+}
+
+// Vision API request with image support
+struct OpenAIVisionRequest: Encodable {
+    let model: String
+    let messages: [OpenAIVisionMessage]
+    let maxTokens: Int?
+    let stream: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case messages
+        case maxTokens = "max_tokens"
+        case stream
+    }
+}
+
+struct OpenAIVisionMessage: Encodable {
+    let role: String
+    let content: [OpenAIVisionContent]
+}
+
+enum OpenAIVisionContent: Encodable {
+    case text(String)
+    case imageURL(String)
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case imageUrl = "image_url"
+    }
+
+    struct ImageURL: Encodable {
+        let url: String
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        switch self {
+        case .text(let text):
+            try container.encode("text", forKey: .type)
+            try container.encode(text, forKey: .text)
+        case .imageURL(let base64):
+            try container.encode("image_url", forKey: .type)
+            try container.encode(ImageURL(url: "data:image/png;base64,\(base64)"), forKey: .imageUrl)
+        }
+    }
 }
 
 // MARK: - Response Models (for non-streaming)

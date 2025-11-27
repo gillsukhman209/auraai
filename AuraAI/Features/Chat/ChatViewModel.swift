@@ -5,6 +5,7 @@
 //  Created by Sukhman Singh on 11/26/25.
 //
 
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -12,6 +13,8 @@ import SwiftUI
 class ChatViewModel {
     private let openAIService: OpenAIService
     private let clipboardService: ClipboardService
+    private let screenshotService: ScreenshotService
+    private weak var panelController: FloatingPanelController?
 
     var conversation: Conversation
     var inputText: String = ""
@@ -22,13 +25,20 @@ class ChatViewModel {
     var showQuickActions: Bool = false
     var clipboardText: String?
 
+    // Screenshot state
+    var pendingScreenshot: NSImage?
+
     init(
         openAIService: OpenAIService,
         clipboardService: ClipboardService,
+        screenshotService: ScreenshotService = .shared,
+        panelController: FloatingPanelController? = nil,
         conversation: Conversation
     ) {
         self.openAIService = openAIService
         self.clipboardService = clipboardService
+        self.screenshotService = screenshotService
+        self.panelController = panelController
         self.conversation = conversation
     }
 
@@ -60,15 +70,22 @@ class ChatViewModel {
     @MainActor
     func sendMessage() async {
         let trimmedInput = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedInput.isEmpty else { return }
+
+        // Allow sending with just a screenshot (no text required)
+        guard !trimmedInput.isEmpty || pendingScreenshot != nil else { return }
 
         // Hide quick actions if shown
         showQuickActions = false
 
-        // Add user message
-        let userMessage = Message(role: .user, content: trimmedInput)
+        // Add user message with optional screenshot
+        let userMessage = Message(
+            role: .user,
+            content: trimmedInput.isEmpty ? "What's in this screenshot?" : trimmedInput,
+            image: pendingScreenshot
+        )
         conversation.addMessage(userMessage)
         inputText = ""
+        pendingScreenshot = nil
 
         // Create placeholder for assistant response
         let assistantMessage = Message(role: .assistant, content: "", isStreaming: true)
@@ -99,6 +116,25 @@ class ChatViewModel {
         }
 
         isProcessing = false
+    }
+
+    // MARK: - Screenshot Methods
+
+    /// Capture a screenshot of the full screen (excludes the AuraAI panel automatically)
+    @MainActor
+    func captureScreenshot() async {
+        do {
+            // Capture screenshot - AuraAI windows are automatically excluded
+            let image = try await screenshotService.captureFullScreen()
+            pendingScreenshot = image
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Clear the pending screenshot
+    func clearScreenshot() {
+        pendingScreenshot = nil
     }
 
     func pasteFromClipboard() {

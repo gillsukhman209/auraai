@@ -11,13 +11,27 @@ struct ChatInputView: View {
     @Binding var text: String
     var onSend: () -> Void
     var onPaste: () -> Void
+    var onScreenshot: () -> Void
     var isDisabled: Bool
+    var hasScreenshot: Bool
 
     @State private var isHoveringPaste = false
+    @State private var isHoveringScreenshot = false
     @State private var isHoveringSend = false
 
     var body: some View {
         HStack(spacing: 10) {
+            // Screenshot button
+            Button(action: onScreenshot) {
+                Image(systemName: "camera.viewfinder")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(isHoveringScreenshot ? .white : .white.opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .onHover { isHoveringScreenshot = $0 }
+            .help("Capture screenshot")
+            .disabled(isDisabled)
+
             // Paste button
             Button(action: onPaste) {
                 Image(systemName: "doc.on.clipboard")
@@ -70,7 +84,7 @@ struct ChatInputView: View {
     }
 
     private var canSend: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isDisabled
+        (!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasScreenshot) && !isDisabled
     }
 }
 
@@ -83,7 +97,9 @@ struct ChatInputView: View {
                 text: .constant(""),
                 onSend: {},
                 onPaste: {},
-                isDisabled: false
+                onScreenshot: {},
+                isDisabled: false,
+                hasScreenshot: false
             )
             .padding()
         }
