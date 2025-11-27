@@ -47,9 +47,12 @@ class AppState {
     @MainActor
     private func captureAndShowScreenshot() async {
         do {
-            let image = try await screenshotService.captureFullScreen()
+            // Use native screencapture tool for area selection
+            let image = try await screenshotService.captureSelectedArea()
             pendingScreenshotFromHotkey = image
             panelController.show()
+        } catch ScreenshotService.ScreenshotError.cancelled {
+            // User cancelled the selection - do nothing
         } catch {
             print("Screenshot hotkey error: \(error.localizedDescription)")
         }

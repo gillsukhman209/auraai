@@ -18,6 +18,7 @@ final class ScreenshotService {
         case noDisplay
         case permissionDenied
         case noContent
+        case cancelled
 
         var errorDescription: String? {
             switch self {
@@ -29,6 +30,8 @@ final class ScreenshotService {
                 return "Screen recording permission required. Please enable in System Settings > Privacy & Security > Screen Recording"
             case .noContent:
                 return "No shareable content available"
+            case .cancelled:
+                return "Screenshot capture was cancelled"
             }
         }
     }
@@ -103,6 +106,48 @@ final class ScreenshotService {
 
         // Resize if too large (for API efficiency)
         return resizeIfNeeded(nsImage, maxDimension: 2048)
+    }
+
+    /// Capture a user-selected area using macOS native screencapture tool
+    /// Shows the familiar crosshair selection UI
+    func captureSelectedArea() async throws -> NSImage {
+        // Create a temporary file for the screenshot
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("png")
+
+        // Use screencapture command with interactive selection mode
+        // -i = interactive (selection or window)
+        // -s = selection mode only (drag to select area)
+        // -x = no sound
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-i", "-x", tempURL.path]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            throw ScreenshotError.captureFailure
+        }
+
+        // Check if user cancelled (file won't exist)
+        guard FileManager.default.fileExists(atPath: tempURL.path) else {
+            throw ScreenshotError.cancelled
+        }
+
+        // Load the screenshot
+        guard let image = NSImage(contentsOf: tempURL) else {
+            // Clean up temp file
+            try? FileManager.default.removeItem(at: tempURL)
+            throw ScreenshotError.captureFailure
+        }
+
+        // Clean up temp file
+        try? FileManager.default.removeItem(at: tempURL)
+
+        // Resize if too large (for API efficiency)
+        return resizeIfNeeded(image, maxDimension: 2048)
     }
 
     /// Resize image if larger than max dimension while maintaining aspect ratio
