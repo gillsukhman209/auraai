@@ -83,6 +83,14 @@ class ChatViewModel {
         showQuickActions = false
     }
 
+    /// Quick action to explain pending images
+    @MainActor
+    func explainImages() async {
+        guard !pendingImages.isEmpty else { return }
+        inputText = "Explain what's in this image"
+        await sendMessage()
+    }
+
     @MainActor
     func sendMessage() async {
         let trimmedInput = inputText.trimmingCharacters(in: .whitespacesAndNewlines)

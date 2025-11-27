@@ -162,6 +162,13 @@ struct ChatView: View {
                     )
                     .padding(.horizontal, 12)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
+
+                    // Quick "Explain" action for images
+                    ImageQuickActionView {
+                        Task { await viewModel.explainImages() }
+                    }
+                    .padding(.horizontal, 12)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
                 // Floating input bar
@@ -218,6 +225,43 @@ struct ChatView: View {
         // Focus input after a brief delay to ensure view is ready
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             isInputFocused = true
+        }
+    }
+}
+
+// MARK: - Image Quick Action View
+
+struct ImageQuickActionView: View {
+    var onExplain: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack {
+            Button(action: onExplain) {
+                HStack(spacing: 6) {
+                    Image(systemName: "eye")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("Explain")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundColor(isHovering ? .white : .white.opacity(0.8))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [.blue.opacity(isHovering ? 0.8 : 0.6), .purple.opacity(isHovering ? 0.8 : 0.6)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovering = $0 }
+
+            Spacer()
         }
     }
 }
