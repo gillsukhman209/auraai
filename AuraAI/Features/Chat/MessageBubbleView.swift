@@ -204,25 +204,35 @@ struct GeneratedImageView: View {
     }
 
     private func saveImage() {
-        let savePanel = NSSavePanel()
-        savePanel.allowedContentTypes = [.png]
-        savePanel.nameFieldStringValue = "generated_image.png"
+        // Run on main thread to ensure proper UI handling
+        DispatchQueue.main.async {
+            let savePanel = NSSavePanel()
+            savePanel.allowedContentTypes = [.png]
+            savePanel.nameFieldStringValue = "generated_image.png"
+            savePanel.canCreateDirectories = true
+            savePanel.isExtensionHidden = false
+            savePanel.title = "Save Generated Image"
+            savePanel.message = "Choose a location to save the image"
 
-        savePanel.begin { response in
+            // Use runModal for floating panel compatibility
+            let response = savePanel.runModal()
+
             if response == .OK, let url = savePanel.url {
                 if let tiffData = image.tiffRepresentation,
                    let bitmap = NSBitmapImageRep(data: tiffData),
                    let pngData = bitmap.representation(using: .png, properties: [:]) {
-                    try? pngData.write(to: url)
-
-                    withAnimation {
-                        showSaved = true
-                    }
-
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    do {
+                        try pngData.write(to: url)
                         withAnimation {
-                            showSaved = false
+                            showSaved = true
                         }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            withAnimation {
+                                showSaved = false
+                            }
+                        }
+                    } catch {
+                        print("❌ Failed to save image: \(error)")
                     }
                 }
             }
@@ -339,11 +349,16 @@ struct ProcessedImageView: View {
     }
 
     private func saveImage(format: ImageFormat) {
-        let savePanel = NSSavePanel()
-        savePanel.allowedContentTypes = [format == .png ? .png : .jpeg]
-        savePanel.nameFieldStringValue = "processed_image.\(format.fileExtension)"
+        DispatchQueue.main.async {
+            let savePanel = NSSavePanel()
+            savePanel.allowedContentTypes = [format == .png ? .png : .jpeg]
+            savePanel.nameFieldStringValue = "processed_image.\(format.fileExtension)"
+            savePanel.canCreateDirectories = true
+            savePanel.isExtensionHidden = false
+            savePanel.title = "Save Processed Image"
 
-        savePanel.begin { response in
+            let response = savePanel.runModal()
+
             if response == .OK, let url = savePanel.url {
                 if let tiffData = result.processedImage.tiffRepresentation,
                    let bitmap = NSBitmapImageRep(data: tiffData) {
@@ -355,16 +370,18 @@ struct ProcessedImageView: View {
                     }
 
                     if let data = bitmap.representation(using: fileType, properties: properties) {
-                        try? data.write(to: url)
-
-                        withAnimation {
-                            showSaved = true
-                        }
-
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        do {
+                            try data.write(to: url)
                             withAnimation {
-                                showSaved = false
+                                showSaved = true
                             }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                withAnimation {
+                                    showSaved = false
+                                }
+                            }
+                        } catch {
+                            print("❌ Failed to save image: \(error)")
                         }
                     }
                 }
