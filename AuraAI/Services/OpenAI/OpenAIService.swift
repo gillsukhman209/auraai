@@ -48,6 +48,7 @@ actor OpenAIService: AIProvider {
 
     private let screenshotService = ScreenshotService.shared
     private let remindersService = RemindersService.shared
+    private let notificationService = NotificationService.shared
 
     // MARK: - Tool Definitions
 
@@ -72,6 +73,27 @@ actor OpenAIService: AIProvider {
                         )
                     ],
                     required: ["title"]
+                )
+            )),
+            OpenAITool(function: OpenAIFunctionDefinition(
+                name: "send_notification",
+                description: "Schedule a macOS notification to appear after a delay. Use this when the user asks to be notified or alerted about something in the future.",
+                parameters: OpenAIFunctionParameters(
+                    properties: [
+                        "title": OpenAIParameterProperty(
+                            type: "string",
+                            description: "Brief notification title (e.g., 'Time to stretch!', 'Meeting reminder')"
+                        ),
+                        "body": OpenAIParameterProperty(
+                            type: "string",
+                            description: "The notification message body with more details"
+                        ),
+                        "delay_seconds": OpenAIParameterProperty(
+                            type: "number",
+                            description: "Number of seconds until the notification appears (e.g., 600 for 10 minutes)"
+                        )
+                    ],
+                    required: ["title", "body", "delay_seconds"]
                 )
             ))
         ]
@@ -278,6 +300,8 @@ actor OpenAIService: AIProvider {
         switch toolCall.functionName {
         case "create_reminder":
             return await executeCreateReminder(arguments: toolCall.arguments)
+        case "send_notification":
+            return await executeNotification(arguments: toolCall.arguments)
         default:
             return "\n\n⚠️ Unknown tool: \(toolCall.functionName)"
         }
@@ -310,6 +334,48 @@ actor OpenAIService: AIProvider {
             return "\n\n✅ \(result)"
         } catch {
             return "\n\n❌ \(error.localizedDescription)"
+        }
+    }
+
+    private func executeNotification(arguments: String) async -> String {
+        // Parse the JSON arguments
+        guard let data = arguments.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let title = json["title"] as? String,
+              let body = json["body"] as? String,
+              let delaySeconds = json["delay_seconds"] as? Double else {
+            return "\n\n❌ Failed to parse notification details."
+        }
+
+        // Schedule the notification
+        do {
+            try await notificationService.scheduleNotification(
+                title: title,
+                body: body,
+                delay: delaySeconds
+            )
+
+            // Format a friendly time description
+            let timeDescription = formatTimeDelay(seconds: Int(delaySeconds))
+            return "\n\n⏰ I'll notify you \(timeDescription)!"
+        } catch {
+            return "\n\n❌ \(error.localizedDescription)"
+        }
+    }
+
+    private func formatTimeDelay(seconds: Int) -> String {
+        if seconds < 60 {
+            return "in \(seconds) second\(seconds == 1 ? "" : "s")"
+        } else if seconds < 3600 {
+            let minutes = seconds / 60
+            return "in \(minutes) minute\(minutes == 1 ? "" : "s")"
+        } else {
+            let hours = seconds / 3600
+            let remainingMinutes = (seconds % 3600) / 60
+            if remainingMinutes > 0 {
+                return "in \(hours) hour\(hours == 1 ? "" : "s") and \(remainingMinutes) minute\(remainingMinutes == 1 ? "" : "s")"
+            }
+            return "in \(hours) hour\(hours == 1 ? "" : "s")"
         }
     }
 }

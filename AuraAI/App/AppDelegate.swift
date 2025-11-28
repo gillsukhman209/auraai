@@ -23,6 +23,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appState.panelController.createPanel {
             ChatView(appState: self.appState)
         }
+
+        // Request notification permission
+        Task {
+            await NotificationService.shared.requestPermission()
+        }
     }
 
     private func setupStatusItem() {
