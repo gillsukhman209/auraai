@@ -15,6 +15,7 @@ class ChatViewModel {
     private let geminiService: GeminiService
     private let clipboardService: ClipboardService
     private let screenshotService: ScreenshotService
+    private let imageManipulationService = ImageManipulationService.shared
     private weak var panelController: FloatingPanelController?
 
     var conversation: Conversation
@@ -23,7 +24,7 @@ class ChatViewModel {
     var isProcessing: Bool = false
 
     // Model selection
-    var selectedModel: AIModelType = .gpt4o
+    var selectedModel: AIModelType = .gpt51
 
     // Quick Actions state
     var showQuickActions: Bool = false
@@ -51,7 +52,7 @@ class ChatViewModel {
     /// Get the currently selected AI provider
     private var currentProvider: any AIProvider {
         switch selectedModel {
-        case .gpt4o:
+        case .gpt51:
             return openAIService
         case .gemini:
             return geminiService
@@ -101,6 +102,14 @@ class ChatViewModel {
         // Hide quick actions if shown
         showQuickActions = false
 
+        // Check for local image manipulation intent
+        if !pendingImages.isEmpty,
+           await imageManipulationService.containsManipulationKeywords(trimmedInput),
+           let manipulation = await imageManipulationService.detectIntent(from: trimmedInput) {
+            await handleLocalImageManipulation(message: trimmedInput, manipulation: manipulation)
+            return
+        }
+
         // Add user message with optional images
         let imageCount = pendingImages.count
         let defaultPrompt = imageCount == 1 ? "What's in this image?" : "What's in these \(imageCount) images?"
@@ -148,6 +157,43 @@ class ChatViewModel {
                 conversation.messages.removeLast()
             }
         }
+
+        isProcessing = false
+    }
+
+    // MARK: - Local Image Manipulation
+
+    @MainActor
+    private func handleLocalImageManipulation(message: String, manipulation: ManipulationType) async {
+        guard !pendingImages.isEmpty else { return }
+
+        // Add user message with the image
+        let userMessage = Message(
+            role: .user,
+            content: message,
+            images: pendingImages
+        )
+        conversation.addMessage(userMessage)
+
+        let imagesToProcess = pendingImages
+        inputText = ""
+        pendingImages = []
+
+        isProcessing = true
+        errorMessage = nil
+
+        // Process the image locally
+        let result = await imageManipulationService.process(imagesToProcess.first!, manipulation: manipulation)
+
+        // Create assistant response with the manipulation result
+        let operationSummary = result.operations.joined(separator: ", ")
+        let assistantMessage = Message(
+            role: .assistant,
+            content: "Done! \(operationSummary)",
+            images: [result.processedImage],
+            manipulationResult: result
+        )
+        conversation.addMessage(assistantMessage)
 
         isProcessing = false
     }

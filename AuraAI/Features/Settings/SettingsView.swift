@@ -36,7 +36,7 @@ struct SettingsView: View {
                     HStack {
                         Text("AI Model:")
                         Spacer()
-                        Text("GPT-4o")
+                        Text("GPT-5.1")
                             .foregroundColor(.secondary)
                     }
                 }

@@ -42,11 +42,17 @@ struct MessageBubbleView: View {
                     .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
                 }
 
-                // Generated images (for assistant messages)
-                if !message.images.isEmpty && !isUser {
-                    VStack(spacing: 8) {
-                        ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
-                            GeneratedImageView(image: image)
+                // Processed/Generated images (for assistant messages)
+                if !isUser {
+                    if let result = message.manipulationResult {
+                        // Show ProcessedImageView for manipulated images
+                        ProcessedImageView(result: result)
+                    } else if !message.images.isEmpty {
+                        // Show GeneratedImageView for AI-generated images
+                        VStack(spacing: 8) {
+                            ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
+                                GeneratedImageView(image: image)
+                            }
                         }
                     }
                 }
@@ -219,6 +225,165 @@ struct GeneratedImageView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Processed Image View (for manipulated images)
+
+struct ProcessedImageView: View {
+    let result: ManipulationResult
+    @State private var isHovered = false
+    @State private var showSaved = false
+    @State private var selectedFormat: ImageFormat = .png
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Image preview
+            ZStack(alignment: .topTrailing) {
+                Image(nsImage: result.processedImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: 280, maxHeight: 280)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [.green.opacity(0.6), .teal.opacity(0.6)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                    )
+                    .shadow(color: .green.opacity(0.2), radius: 12, x: 0, y: 4)
+
+                // Quick save button (on hover)
+                if isHovered {
+                    Button(action: { saveImage(format: selectedFormat) }) {
+                        Image(systemName: showSaved ? "checkmark" : "square.and.arrow.down")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white)
+                            .frame(width: 28, height: 28)
+                            .background(
+                                Circle()
+                                    .fill(.black.opacity(0.6))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .padding(8)
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isHovered = hovering
+                }
+            }
+
+            // Size info
+            Text(result.sizeDescription)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white.opacity(0.6))
+
+            // Quick action buttons
+            HStack(spacing: 8) {
+                ForEach([ImageFormat.png, .jpeg], id: \.self) { format in
+                    Button(action: { saveImage(format: format) }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.system(size: 10))
+                            Text(format.rawValue)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundColor(.white.opacity(0.9))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(format == .png ? Color.green.opacity(0.3) : Color.orange.opacity(0.3))
+                        )
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(.white.opacity(0.2), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Copy to clipboard
+                Button(action: copyToClipboard) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.doc.fill")
+                            .font(.system(size: 10))
+                        Text("Copy")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(.white.opacity(0.9))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(Color.blue.opacity(0.3))
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(.white.opacity(0.2), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func saveImage(format: ImageFormat) {
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [format == .png ? .png : .jpeg]
+        savePanel.nameFieldStringValue = "processed_image.\(format.fileExtension)"
+
+        savePanel.begin { response in
+            if response == .OK, let url = savePanel.url {
+                if let tiffData = result.processedImage.tiffRepresentation,
+                   let bitmap = NSBitmapImageRep(data: tiffData) {
+
+                    let fileType: NSBitmapImageRep.FileType = format == .png ? .png : .jpeg
+                    var properties: [NSBitmapImageRep.PropertyKey: Any] = [:]
+                    if format == .jpeg {
+                        properties[.compressionFactor] = 0.9
+                    }
+
+                    if let data = bitmap.representation(using: fileType, properties: properties) {
+                        try? data.write(to: url)
+
+                        withAnimation {
+                            showSaved = true
+                        }
+
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            withAnimation {
+                                showSaved = false
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func copyToClipboard() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([result.processedImage])
+
+        withAnimation {
+            showSaved = true
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation {
+                showSaved = false
             }
         }
     }

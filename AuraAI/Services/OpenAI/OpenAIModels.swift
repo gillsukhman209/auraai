@@ -12,14 +12,14 @@ import Foundation
 struct OpenAIChatRequest: Encodable {
     let model: String
     let messages: [OpenAIChatMessage]
-    let maxTokens: Int?
+    let maxCompletionTokens: Int?
     let stream: Bool
     let tools: [OpenAITool]?
 
     enum CodingKeys: String, CodingKey {
         case model
         case messages
-        case maxTokens = "max_tokens"
+        case maxCompletionTokens = "max_completion_tokens"
         case stream
         case tools
     }
@@ -59,14 +59,14 @@ struct OpenAIChatMessage: Codable {
 struct OpenAIVisionRequest: Encodable {
     let model: String
     let messages: [OpenAIVisionMessage]
-    let maxTokens: Int?
+    let maxCompletionTokens: Int?
     let stream: Bool
     let tools: [OpenAITool]?
 
     enum CodingKeys: String, CodingKey {
         case model
         case messages
-        case maxTokens = "max_tokens"
+        case maxCompletionTokens = "max_completion_tokens"
         case stream
         case tools
     }

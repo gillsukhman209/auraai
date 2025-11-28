@@ -21,6 +21,7 @@ struct Message: Identifiable, Equatable {
     let timestamp: Date
     var isStreaming: Bool
     var images: [NSImage]
+    var manipulationResult: ManipulationResult?
 
     init(
         id: UUID = UUID(),
@@ -28,7 +29,8 @@ struct Message: Identifiable, Equatable {
         content: String,
         timestamp: Date = Date(),
         isStreaming: Bool = false,
-        images: [NSImage] = []
+        images: [NSImage] = [],
+        manipulationResult: ManipulationResult? = nil
     ) {
         self.id = id
         self.role = role
@@ -36,6 +38,7 @@ struct Message: Identifiable, Equatable {
         self.timestamp = timestamp
         self.isStreaming = isStreaming
         self.images = images
+        self.manipulationResult = manipulationResult
     }
 
     static func == (lhs: Message, rhs: Message) -> Bool {

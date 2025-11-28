@@ -9,7 +9,7 @@ import Foundation
 
 /// Available AI model types
 enum AIModelType: String, CaseIterable, Identifiable {
-    case gpt4o = "GPT-4o"
+    case gpt51 = "GPT-5.1"
     case gemini = "Gemini"
 
     var id: String { rawValue }
@@ -18,7 +18,7 @@ enum AIModelType: String, CaseIterable, Identifiable {
 
     var iconName: String {
         switch self {
-        case .gpt4o: return "brain"
+        case .gpt51: return "brain"
         case .gemini: return "sparkles"
         }
     }

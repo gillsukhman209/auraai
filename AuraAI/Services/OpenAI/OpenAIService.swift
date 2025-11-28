@@ -38,7 +38,7 @@ enum OpenAIError: Error, LocalizedError {
 }
 
 actor OpenAIService: AIProvider {
-    nonisolated let name = "GPT-4o"
+    nonisolated let name = "GPT-5.1"
 
     private let baseURL = URL(string: AppConstants.API.openAIBaseURL)!
 
@@ -133,7 +133,7 @@ actor OpenAIService: AIProvider {
             let request = OpenAIVisionRequest(
                 model: AppConstants.API.openAIModel,
                 messages: visionMessages,
-                maxTokens: AppConstants.API.maxTokens,
+                maxCompletionTokens: AppConstants.API.maxTokens,
                 stream: true,
                 tools: availableTools
             )
@@ -153,7 +153,7 @@ actor OpenAIService: AIProvider {
             let request = OpenAIChatRequest(
                 model: AppConstants.API.openAIModel,
                 messages: openAIMessages,
-                maxTokens: AppConstants.API.maxTokens,
+                maxCompletionTokens: AppConstants.API.maxTokens,
                 stream: true,
                 tools: availableTools
             )
@@ -173,7 +173,25 @@ actor OpenAIService: AIProvider {
             if httpResponse.statusCode == 429 {
                 throw OpenAIError.rateLimitExceeded
             }
-            throw OpenAIError.apiError("HTTP \(httpResponse.statusCode)")
+            // Try to get error details from response body
+            var errorMessage = "HTTP \(httpResponse.statusCode)"
+            var errorBody = ""
+            for try await line in bytes.lines {
+                errorBody += line
+            }
+            if !errorBody.isEmpty {
+                // Parse error JSON if possible
+                if let data = errorBody.data(using: .utf8),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let error = json["error"] as? [String: Any],
+                   let message = error["message"] as? String {
+                    errorMessage = message
+                } else {
+                    errorMessage = errorBody
+                }
+            }
+            print("❌ OpenAI API Error: \(errorMessage)")
+            throw OpenAIError.apiError(errorMessage)
         }
 
         return AsyncThrowingStream { continuation in

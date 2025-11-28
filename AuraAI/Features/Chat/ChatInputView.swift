@@ -171,7 +171,7 @@ struct ModelPickerView: View {
 // Preview wrapper to handle FocusState
 struct ChatInputViewPreview: View {
     @FocusState private var isFocused: Bool
-    @State private var selectedModel: AIModelType = .gpt4o
+    @State private var selectedModel: AIModelType = .gpt51
 
     var body: some View {
         ZStack {

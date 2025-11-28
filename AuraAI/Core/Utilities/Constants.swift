@@ -23,7 +23,7 @@ enum AppConstants {
         // API key is loaded from Secrets.swift (gitignored)
         static let openAIAPIKey = Secrets.openAIAPIKey
         static let openAIBaseURL = "https://api.openai.com/v1/chat/completions"
-        static let openAIModel = "gpt-4o"
+        static let openAIModel = "gpt-5.1"
         static let maxTokens = 4096
 
         // MARK: - Gemini API Configuration
