@@ -449,4 +449,87 @@ actor OpenAIService: AIProvider {
             return "\n\n⏱️ \(title) timer started for \(timeString)!"
         }
     }
+
+    // MARK: - Dictionary Definition (using gpt-5-nano for speed)
+
+    /// Get a clean, formatted definition for a word using gpt-5-nano
+    func getDefinition(for word: String) async throws -> AsyncThrowingStream<String, Error> {
+        guard !apiKey.isEmpty && !apiKey.contains("YOUR_") else {
+            throw OpenAIError.noAPIKey
+        }
+
+        var urlRequest = URLRequest(url: baseURL)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let prompt = """
+Define "\(word)" in simple terms that a 15-year-old student would easily understand. Keep the definition to 1-2 sentences. Then give a relatable real-life example sentence.
+
+Format:
+\(word.capitalized)
+
+Definition: [simple definition here]
+
+Example: "[relatable example sentence]"
+"""
+
+        let messages: [OpenAIChatMessage] = [
+            OpenAIChatMessage(role: "user", content: prompt)
+        ]
+
+        let request = OpenAIChatRequest(
+            model: AppConstants.API.openAINanoModel,
+            messages: messages,
+            maxCompletionTokens: 200,  // Definitions are short
+            stream: true,
+            tools: nil  // No tools for definitions
+        )
+        urlRequest.httpBody = try JSONEncoder().encode(request)
+
+        let (bytes, response) = try await URLSession.shared.bytes(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw OpenAIError.networkError(URLError(.badServerResponse))
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            if httpResponse.statusCode == 401 {
+                throw OpenAIError.invalidAPIKey
+            }
+            if httpResponse.statusCode == 429 {
+                throw OpenAIError.rateLimitExceeded
+            }
+            // Try to read error body
+            var errorBody = ""
+            for try await line in bytes.lines {
+                errorBody += line
+            }
+            print("❌ Definition API Error: HTTP \(httpResponse.statusCode) - \(errorBody)")
+            throw OpenAIError.apiError("HTTP \(httpResponse.statusCode): \(errorBody)")
+        }
+
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    for try await line in bytes.lines {
+                        if line.hasPrefix("data: ") {
+                            let jsonString = String(line.dropFirst(6))
+                            if jsonString == "[DONE]" { break }
+
+                            if let data = jsonString.data(using: .utf8),
+                               let chunk = try? JSONDecoder().decode(OpenAIStreamChunk.self, from: data),
+                               let content = chunk.choices?.first?.delta?.content {
+                                continuation.yield(content)
+                            }
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    print("❌ Definition streaming error: \(error)")
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
 }

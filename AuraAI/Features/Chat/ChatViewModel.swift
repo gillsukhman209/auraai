@@ -16,6 +16,7 @@ class ChatViewModel {
     private let clipboardService: ClipboardService
     private let screenshotService: ScreenshotService
     private let imageManipulationService = ImageManipulationService.shared
+    private let dictionaryService = DictionaryService.shared
     private weak var panelController: FloatingPanelController?
 
     var conversation: Conversation
@@ -30,8 +31,16 @@ class ChatViewModel {
     var showQuickActions: Bool = false
     var clipboardText: String?
 
+    // Dictionary quick action - shown when clipboard contains a single word
+    var showDefineAction: Bool = false
+    var clipboardWord: String?
+
     // Multiple images state (screenshots + drag & drop)
     var pendingImages: [NSImage] = []
+
+    // Clipboard monitoring
+    private var lastPasteboardChangeCount: Int = 0
+    private var clipboardTimer: Timer?
 
     init(
         openAIService: OpenAIService,
@@ -59,13 +68,55 @@ class ChatViewModel {
         }
     }
 
+    /// Start monitoring clipboard for changes
+    func startClipboardMonitoring() {
+        lastPasteboardChangeCount = NSPasteboard.general.changeCount
+        checkClipboardForQuickActions()
+
+        // Check clipboard every 0.5 seconds for changes
+        clipboardTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.checkClipboardIfChanged()
+        }
+    }
+
+    /// Stop monitoring clipboard
+    func stopClipboardMonitoring() {
+        clipboardTimer?.invalidate()
+        clipboardTimer = nil
+    }
+
+    /// Check clipboard only if it has changed
+    private func checkClipboardIfChanged() {
+        let currentCount = NSPasteboard.general.changeCount
+        if currentCount != lastPasteboardChangeCount {
+            lastPasteboardChangeCount = currentCount
+            checkClipboardForQuickActions()
+        }
+    }
+
     /// Check clipboard and show quick actions if text is available
     func checkClipboardForQuickActions() {
-        if let text = clipboardService.readText(),
-           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           conversation.messages.isEmpty {
+        guard let text = clipboardService.readText(),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            showQuickActions = false
+            showDefineAction = false
+            return
+        }
+
+        // Check if it's a single word - show Define action
+        if dictionaryService.isSingleWord(text) {
+            clipboardWord = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            showDefineAction = true
+            showQuickActions = false
+        } else if conversation.messages.isEmpty {
+            // Multi-word text - show regular quick actions only if conversation is empty
             clipboardText = text
             showQuickActions = true
+            showDefineAction = false
+        } else {
+            // Conversation has messages and not a single word
+            showQuickActions = false
+            showDefineAction = false
         }
     }
 
@@ -82,6 +133,61 @@ class ChatViewModel {
     /// Dismiss quick actions
     func dismissQuickActions() {
         showQuickActions = false
+        showDefineAction = false
+    }
+
+    /// Execute dictionary lookup for clipboard word
+    @MainActor
+    func executeDefineAction() async {
+        guard let word = clipboardWord else { return }
+        showDefineAction = false
+        await defineWord(word)
+    }
+
+    /// Define a word using AI (gpt-5-nano) for clean, understandable definitions
+    @MainActor
+    func defineWord(_ word: String) async {
+        let trimmedWord = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedWord.isEmpty else { return }
+
+        // Add user message
+        let userMessage = Message(role: .user, content: "define \(trimmedWord)")
+        conversation.addMessage(userMessage)
+
+        // Create streaming assistant message
+        let assistantMessage = Message(role: .assistant, content: "", isStreaming: true)
+        conversation.addMessage(assistantMessage)
+
+        isProcessing = true
+        errorMessage = nil
+
+        do {
+            let stream = try await openAIService.getDefinition(for: trimmedWord)
+
+            var fullResponse = ""
+            for try await chunk in stream {
+                fullResponse += chunk
+                conversation.updateLastMessage(content: fullResponse)
+            }
+
+            conversation.setLastMessageStreaming(false)
+        } catch {
+            errorMessage = error.localizedDescription
+            // Remove the empty assistant message on error, try local dictionary as fallback
+            if conversation.messages.last?.content.isEmpty == true {
+                conversation.messages.removeLast()
+            }
+            // Fallback to local macOS dictionary
+            if let result = dictionaryService.define(trimmedWord) {
+                let fallbackMessage = Message(role: .assistant, content: result.formattedResponse)
+                conversation.addMessage(fallbackMessage)
+            } else {
+                let fallbackMessage = Message(role: .assistant, content: "Could not find a definition for \"\(trimmedWord)\".")
+                conversation.addMessage(fallbackMessage)
+            }
+        }
+
+        isProcessing = false
     }
 
     /// Quick action to explain pending images
@@ -101,6 +207,15 @@ class ChatViewModel {
 
         // Hide quick actions if shown
         showQuickActions = false
+        showDefineAction = false
+
+        // Check for dictionary request FIRST (before API call) - only if no images
+        if pendingImages.isEmpty,
+           let wordToDefine = dictionaryService.extractWordToDefine(from: trimmedInput) {
+            inputText = ""
+            await defineWord(wordToDefine)
+            return
+        }
 
         // Check for local image manipulation intent
         if !pendingImages.isEmpty,
@@ -324,6 +439,8 @@ class ChatViewModel {
     func clearConversation() {
         conversation.clear()
         errorMessage = nil
+        showDefineAction = false
+        clipboardWord = nil
         // Check clipboard again for quick actions
         checkClipboardForQuickActions()
     }

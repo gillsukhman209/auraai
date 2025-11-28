@@ -14,14 +14,17 @@ class GlobalHotKeyManager {
     private var eventHandler: EventHandlerRef?
     private var toggleHotKeyRef: EventHotKeyRef?
     private var screenshotHotKeyRef: EventHotKeyRef?
+    private var defineHotKeyRef: EventHotKeyRef?
 
     // Hotkey IDs
     private static let toggleHotKeyID: UInt32 = 1
     private static let screenshotHotKeyID: UInt32 = 2
+    private static let defineHotKeyID: UInt32 = 3
 
     // Callbacks
     var onHotKeyPressed: (() -> Void)?              // Cmd+Shift+Space - toggle panel
     var onScreenshotHotKeyPressed: (() -> Void)?    // Cmd+Shift+S - quick screenshot
+    var onDefineHotKeyPressed: (() -> Void)?        // Cmd+Shift+D - define word
 
     init() {
         setupHotKeys()
@@ -61,6 +64,8 @@ class GlobalHotKeyManager {
                         manager.onHotKeyPressed?()
                     case GlobalHotKeyManager.screenshotHotKeyID:
                         manager.onScreenshotHotKeyPressed?()
+                    case GlobalHotKeyManager.defineHotKeyID:
+                        manager.onDefineHotKeyPressed?()
                     default:
                         break
                     }
@@ -111,6 +116,23 @@ class GlobalHotKeyManager {
         if screenshotStatus != noErr {
             print("Failed to register screenshot hotkey: \(screenshotStatus)")
         }
+
+        // Register define hotkey: Cmd + Shift + D
+        var defineID = EventHotKeyID(
+            signature: OSType(0x41555241), // "AURA"
+            id: Self.defineHotKeyID
+        )
+        let defineStatus = RegisterEventHotKey(
+            UInt32(kVK_ANSI_D),
+            UInt32(cmdKey | shiftKey),
+            defineID,
+            GetApplicationEventTarget(),
+            0,
+            &defineHotKeyRef
+        )
+        if defineStatus != noErr {
+            print("Failed to register define hotkey: \(defineStatus)")
+        }
     }
 
     deinit {
@@ -118,6 +140,9 @@ class GlobalHotKeyManager {
             UnregisterEventHotKey(ref)
         }
         if let ref = screenshotHotKeyRef {
+            UnregisterEventHotKey(ref)
+        }
+        if let ref = defineHotKeyRef {
             UnregisterEventHotKey(ref)
         }
         if let handler = eventHandler {

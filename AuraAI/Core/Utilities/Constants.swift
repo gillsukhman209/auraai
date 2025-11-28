@@ -24,6 +24,7 @@ enum AppConstants {
         static let openAIAPIKey = Secrets.openAIAPIKey
         static let openAIBaseURL = "https://api.openai.com/v1/chat/completions"
         static let openAIModel = "gpt-5.1"
+        static let openAINanoModel = "gpt-5.1"  // Using main model for definitions (nano models not available)
         static let maxTokens = 4096
 
         // MARK: - Gemini API Configuration

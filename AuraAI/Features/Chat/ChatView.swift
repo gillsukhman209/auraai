@@ -86,6 +86,17 @@ struct ChatView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
+                // Define Quick Action (shown when clipboard has a single word)
+                if viewModel.showDefineAction, let word = viewModel.clipboardWord {
+                    DefineQuickActionView(
+                        word: word,
+                        onDefine: { Task { await viewModel.executeDefineAction() } },
+                        onDismiss: viewModel.dismissQuickActions
+                    )
+                    .padding(.horizontal, 12)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
+
                 // Messages - floating bubbles (always show ScrollView for proper layout)
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: true) {
@@ -200,12 +211,21 @@ struct ChatView: View {
             viewModel.handleDroppedImage(providers: providers)
         }
         .onAppear {
-            viewModel.checkClipboardForQuickActions()
+            viewModel.startClipboardMonitoring()
             consumeScreenshotsFromHotkey()
+            consumePendingWordToDefine()
+        }
+        .onDisappear {
+            viewModel.stopClipboardMonitoring()
         }
         .onChange(of: appState.pendingScreenshotsFromHotkey.count) { _, newCount in
             if newCount > 0 {
                 consumeScreenshotsFromHotkey()
+            }
+        }
+        .onChange(of: appState.pendingWordToDefine) { _, newWord in
+            if newWord != nil {
+                consumePendingWordToDefine()
             }
         }
         .onKeyPress(.escape) {
@@ -226,6 +246,17 @@ struct ChatView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             isInputFocused = true
         }
+    }
+
+    /// Define word from hotkey (Cmd+Shift+D)
+    private func consumePendingWordToDefine() {
+        guard let word = appState.pendingWordToDefine else { return }
+
+        // Clear the pending word immediately
+        appState.pendingWordToDefine = nil
+
+        // Define the word using AI
+        Task { await viewModel.defineWord(word) }
     }
 }
 
@@ -263,6 +294,70 @@ struct ImageQuickActionView: View {
 
             Spacer()
         }
+    }
+}
+
+// MARK: - Define Quick Action View
+
+struct DefineQuickActionView: View {
+    let word: String
+    var onDefine: () -> Void
+    var onDismiss: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Word preview
+            Text("\"\(word)\"")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.white.opacity(0.7))
+                .lineLimit(1)
+
+            // Define button
+            Button(action: onDefine) {
+                HStack(spacing: 6) {
+                    Image(systemName: "book")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("Define")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundColor(isHovering ? .white : .white.opacity(0.8))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [.green.opacity(isHovering ? 0.8 : 0.6), .teal.opacity(isHovering ? 0.8 : 0.6)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovering = $0 }
+
+            Spacer()
+
+            // Dismiss button
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white.opacity(0.5))
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(.white.opacity(0.1)))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.black.opacity(0.4))
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        )
     }
 }
 
