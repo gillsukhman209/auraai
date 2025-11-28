@@ -95,6 +95,27 @@ actor OpenAIService: AIProvider {
                     ],
                     required: ["title", "body", "delay_seconds"]
                 )
+            )),
+            OpenAITool(function: OpenAIFunctionDefinition(
+                name: "start_timer",
+                description: "Start a countdown timer that appears as a floating popup window. For pomodoro requests, set is_pomodoro=true to enable the full pomodoro cycle (4 focus sessions with breaks between them).",
+                parameters: OpenAIFunctionParameters(
+                    properties: [
+                        "seconds": OpenAIParameterProperty(
+                            type: "number",
+                            description: "Duration in seconds. For regular timer: total duration. For pomodoro: focus session duration (default 25 min = 1500 seconds). Examples: 30 min = 1800, 45 min = 2700."
+                        ),
+                        "title": OpenAIParameterProperty(
+                            type: "string",
+                            description: "Optional label for the timer (e.g., 'Focus session', 'Cooking')"
+                        ),
+                        "is_pomodoro": OpenAIParameterProperty(
+                            type: "boolean",
+                            description: "Set to true for pomodoro mode (focus sessions with 5min short breaks, 15min long break after 4 sessions). Use this when user mentions 'pomodoro', 'pomo', or wants focus sessions."
+                        )
+                    ],
+                    required: []
+                )
             ))
         ]
     }
@@ -302,6 +323,8 @@ actor OpenAIService: AIProvider {
             return await executeCreateReminder(arguments: toolCall.arguments)
         case "send_notification":
             return await executeNotification(arguments: toolCall.arguments)
+        case "start_timer":
+            return await executeStartTimer(arguments: toolCall.arguments)
         default:
             return "\n\n⚠️ Unknown tool: \(toolCall.functionName)"
         }
@@ -376,6 +399,54 @@ actor OpenAIService: AIProvider {
                 return "in \(hours) hour\(hours == 1 ? "" : "s") and \(remainingMinutes) minute\(remainingMinutes == 1 ? "" : "s")"
             }
             return "in \(hours) hour\(hours == 1 ? "" : "s")"
+        }
+    }
+
+    @MainActor
+    private func executeStartTimer(arguments: String) async -> String {
+        // Parse the JSON arguments
+        guard let data = arguments.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return "\n\n❌ Failed to parse timer details."
+        }
+
+        let isPomodoro = json["is_pomodoro"] as? Bool ?? false
+        let title = json["title"] as? String ?? ""
+        let seconds = json["seconds"] as? Double
+
+        if isPomodoro {
+            // Start pomodoro mode with optional custom focus duration
+            let focusDuration = seconds.map { Int($0) }
+            TimerService.shared.startPomodoro(focusDuration: focusDuration)
+
+            let focusMinutes = (focusDuration ?? (25 * 60)) / 60
+            return "\n\n🍅 Pomodoro started! 4 focus sessions of \(focusMinutes) minutes with breaks in between. Stay focused!"
+        }
+
+        // Regular timer mode
+        guard let seconds = json["seconds"] as? Double, seconds > 0 else {
+            return "\n\n❌ Please specify a duration for the timer."
+        }
+
+        TimerService.shared.startTimer(seconds: Int(seconds), title: title)
+
+        // Format a friendly response
+        let minutes = Int(seconds) / 60
+        let remainingSeconds = Int(seconds) % 60
+
+        var timeString: String
+        if minutes > 0 && remainingSeconds > 0 {
+            timeString = "\(minutes) minute\(minutes == 1 ? "" : "s") and \(remainingSeconds) second\(remainingSeconds == 1 ? "" : "s")"
+        } else if minutes > 0 {
+            timeString = "\(minutes) minute\(minutes == 1 ? "" : "s")"
+        } else {
+            timeString = "\(remainingSeconds) second\(remainingSeconds == 1 ? "" : "s")"
+        }
+
+        if title.isEmpty {
+            return "\n\n⏱️ Timer started for \(timeString)!"
+        } else {
+            return "\n\n⏱️ \(title) timer started for \(timeString)!"
         }
     }
 }
