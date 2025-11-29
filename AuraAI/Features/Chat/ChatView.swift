@@ -182,6 +182,13 @@ struct ChatView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
+                // Live calculator preview
+                if let calcResult = viewModel.liveCalculatorPreview {
+                    CalculatorPreviewView(result: calcResult)
+                        .padding(.horizontal, 12)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                }
+
                 // Floating input bar
                 ChatInputView(
                     text: $viewModel.inputText,
@@ -358,6 +365,35 @@ struct DefineQuickActionView: View {
                 .background(.ultraThinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         )
+    }
+}
+
+// MARK: - Calculator Preview View
+
+struct CalculatorPreviewView: View {
+    let result: CalculatorResult
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("=")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.white.opacity(0.5))
+
+            Text(result.answer)
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundColor(.white)
+
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(.black.opacity(0.3))
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        )
+        .animation(.easeOut(duration: 0.15), value: result.answer)
     }
 }
 

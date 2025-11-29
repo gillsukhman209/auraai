@@ -17,6 +17,7 @@ class ChatViewModel {
     private let screenshotService: ScreenshotService
     private let imageManipulationService = ImageManipulationService.shared
     private let dictionaryService = DictionaryService.shared
+    private let calculatorService = CalculatorService.shared
     private weak var panelController: FloatingPanelController?
 
     var conversation: Conversation
@@ -34,6 +35,13 @@ class ChatViewModel {
     // Dictionary quick action - shown when clipboard contains a single word
     var showDefineAction: Bool = false
     var clipboardWord: String?
+
+    // Live calculator preview - shows result as user types
+    var liveCalculatorPreview: CalculatorResult? {
+        let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return calculatorService.detect(trimmed)
+    }
 
     // Multiple images state (screenshots + drag & drop)
     var pendingImages: [NSImage] = []
@@ -209,6 +217,14 @@ class ChatViewModel {
         showQuickActions = false
         showDefineAction = false
 
+        // Check for calculator/conversion (instant, no API call) - only if no images
+        if pendingImages.isEmpty,
+           let calcResult = calculatorService.detect(trimmedInput) {
+            handleCalculatorResult(calcResult, originalInput: trimmedInput)
+            inputText = ""
+            return
+        }
+
         // Check for dictionary request FIRST (before API call) - only if no images
         if pendingImages.isEmpty,
            let wordToDefine = dictionaryService.extractWordToDefine(from: trimmedInput) {
@@ -274,6 +290,20 @@ class ChatViewModel {
         }
 
         isProcessing = false
+    }
+
+    // MARK: - Calculator Result Handler
+
+    /// Handle instant calculator/conversion result (no API call)
+    @MainActor
+    private func handleCalculatorResult(_ result: CalculatorResult, originalInput: String) {
+        // Add user message
+        let userMessage = Message(role: .user, content: originalInput)
+        conversation.addMessage(userMessage)
+
+        // Add instant response
+        let assistantMessage = Message(role: .assistant, content: result.formattedResponse)
+        conversation.addMessage(assistantMessage)
     }
 
     // MARK: - Local Image Manipulation
