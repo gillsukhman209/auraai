@@ -12,8 +12,14 @@ import SwiftUI
 class FloatingPanelController {
     private var panel: FloatingPanel<AnyView>?
     private(set) var isVisible: Bool = false
+    private var isCreatingPanel: Bool = false
 
     func createPanel<Content: View>(content: @escaping () -> Content) {
+        // Prevent creating duplicate panels
+        guard panel == nil, !isCreatingPanel else { return }
+        isCreatingPanel = true
+        defer { isCreatingPanel = false }
+
         let binding = Binding(
             get: { self.isVisible },
             set: { self.isVisible = $0 }
@@ -48,8 +54,13 @@ class FloatingPanelController {
     }
 
     func show() {
-        panel?.center()
-        panel?.makeKeyAndOrderFront(nil)
+        guard let panel = panel else { return }
+        // If already visible and key, just bring to front without re-centering
+        if panel.isVisible && panel.isKeyWindow {
+            return
+        }
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
         isVisible = true
     }
 

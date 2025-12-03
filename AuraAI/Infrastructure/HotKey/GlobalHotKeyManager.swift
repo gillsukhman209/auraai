@@ -15,16 +15,26 @@ class GlobalHotKeyManager {
     private var toggleHotKeyRef: EventHotKeyRef?
     private var screenshotHotKeyRef: EventHotKeyRef?
     private var defineHotKeyRef: EventHotKeyRef?
+    private var transformHotKeyRef: EventHotKeyRef?
+    private var summarizeHotKeyRef: EventHotKeyRef?
 
     // Hotkey IDs
     private static let toggleHotKeyID: UInt32 = 1
     private static let screenshotHotKeyID: UInt32 = 2
     private static let defineHotKeyID: UInt32 = 3
+    private static let transformHotKeyID: UInt32 = 4
+    private static let summarizeHotKeyID: UInt32 = 5
+
+    // Debouncing - prevent rapid successive hotkey presses
+    private var lastHotKeyTime: [UInt32: Date] = [:]
+    private let debounceInterval: TimeInterval = 0.3
 
     // Callbacks
     var onHotKeyPressed: (() -> Void)?              // Cmd+Shift+Space - toggle panel
-    var onScreenshotHotKeyPressed: (() -> Void)?    // Cmd+Shift+S - quick screenshot
+    var onScreenshotHotKeyPressed: (() -> Void)?    // Cmd+Shift+S - screenshot
     var onDefineHotKeyPressed: (() -> Void)?        // Cmd+Shift+D - define word
+    var onTransformHotKeyPressed: (() -> Void)?     // Cmd+Shift+T - transform text
+    var onSummarizeHotKeyPressed: (() -> Void)?     // Cmd+Shift+C - quick summarize
 
     init() {
         setupHotKeys()
@@ -58,6 +68,14 @@ class GlobalHotKeyManager {
 
                 let manager = Unmanaged<GlobalHotKeyManager>.fromOpaque(userData).takeUnretainedValue()
 
+                // Debounce check
+                let now = Date()
+                if let lastTime = manager.lastHotKeyTime[hotKeyID.id],
+                   now.timeIntervalSince(lastTime) < manager.debounceInterval {
+                    return noErr
+                }
+                manager.lastHotKeyTime[hotKeyID.id] = now
+
                 DispatchQueue.main.async {
                     switch hotKeyID.id {
                     case GlobalHotKeyManager.toggleHotKeyID:
@@ -66,6 +84,10 @@ class GlobalHotKeyManager {
                         manager.onScreenshotHotKeyPressed?()
                     case GlobalHotKeyManager.defineHotKeyID:
                         manager.onDefineHotKeyPressed?()
+                    case GlobalHotKeyManager.transformHotKeyID:
+                        manager.onTransformHotKeyPressed?()
+                    case GlobalHotKeyManager.summarizeHotKeyID:
+                        manager.onSummarizeHotKeyPressed?()
                     default:
                         break
                     }
@@ -133,6 +155,40 @@ class GlobalHotKeyManager {
         if defineStatus != noErr {
             print("Failed to register define hotkey: \(defineStatus)")
         }
+
+        // Register transform hotkey: Cmd + Shift + T
+        var transformID = EventHotKeyID(
+            signature: OSType(0x41555241), // "AURA"
+            id: Self.transformHotKeyID
+        )
+        let transformStatus = RegisterEventHotKey(
+            UInt32(kVK_ANSI_T),
+            UInt32(cmdKey | shiftKey),
+            transformID,
+            GetApplicationEventTarget(),
+            0,
+            &transformHotKeyRef
+        )
+        if transformStatus != noErr {
+            print("Failed to register transform hotkey: \(transformStatus)")
+        }
+
+        // Register summarize hotkey: Cmd + Shift + C
+        var summarizeID = EventHotKeyID(
+            signature: OSType(0x41555241), // "AURA"
+            id: Self.summarizeHotKeyID
+        )
+        let summarizeStatus = RegisterEventHotKey(
+            UInt32(kVK_ANSI_C),
+            UInt32(cmdKey | shiftKey),
+            summarizeID,
+            GetApplicationEventTarget(),
+            0,
+            &summarizeHotKeyRef
+        )
+        if summarizeStatus != noErr {
+            print("Failed to register summarize hotkey: \(summarizeStatus)")
+        }
     }
 
     deinit {
@@ -143,6 +199,12 @@ class GlobalHotKeyManager {
             UnregisterEventHotKey(ref)
         }
         if let ref = defineHotKeyRef {
+            UnregisterEventHotKey(ref)
+        }
+        if let ref = transformHotKeyRef {
+            UnregisterEventHotKey(ref)
+        }
+        if let ref = summarizeHotKeyRef {
             UnregisterEventHotKey(ref)
         }
         if let handler = eventHandler {

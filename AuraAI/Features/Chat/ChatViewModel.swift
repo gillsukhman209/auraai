@@ -43,6 +43,10 @@ class ChatViewModel {
         return calculatorService.detect(trimmed)
     }
 
+    // Transform text state (shown when Cmd+Shift+T captures text)
+    var showTransformMenu: Bool = false
+    var textToTransform: String?
+
     // Multiple images state (screenshots + drag & drop)
     var pendingImages: [NSImage] = []
 
@@ -104,6 +108,13 @@ class ChatViewModel {
 
     /// Check clipboard and show quick actions if text is available
     func checkClipboardForQuickActions() {
+        // Don't show quick actions if already processing
+        guard !isProcessing else {
+            showQuickActions = false
+            showDefineAction = false
+            return
+        }
+
         guard let text = clipboardService.readText(),
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             showQuickActions = false
@@ -192,6 +203,63 @@ class ChatViewModel {
             } else {
                 let fallbackMessage = Message(role: .assistant, content: "Could not find a definition for \"\(trimmedWord)\".")
                 conversation.addMessage(fallbackMessage)
+            }
+        }
+
+        isProcessing = false
+    }
+
+    // MARK: - Text Transform Methods
+
+    /// Show transform menu with the given text
+    func showTransform(for text: String) {
+        textToTransform = text
+        showTransformMenu = true
+    }
+
+    /// Dismiss transform menu
+    func dismissTransformMenu() {
+        showTransformMenu = false
+        textToTransform = nil
+    }
+
+    /// Transform text using selected action
+    @MainActor
+    func transformText(_ text: String, action: TransformAction) async {
+        showTransformMenu = false
+        textToTransform = nil
+
+        // Show full text in UI so user can verify everything is captured
+        let userMessage = Message(role: .user, content: "\(action.name): \"\(text)\"")
+        conversation.addMessage(userMessage)
+
+        // Create streaming assistant message
+        let assistantMessage = Message(role: .assistant, content: "", isStreaming: true)
+        conversation.addMessage(assistantMessage)
+
+        isProcessing = true
+        errorMessage = nil
+
+        do {
+            // Build the full prompt
+            let fullPrompt = action.prompt + text
+
+            // Create a temporary message for the API call
+            let apiMessages = [Message(role: .user, content: fullPrompt)]
+
+            let stream = try await currentProvider.sendMessage(apiMessages)
+
+            var fullResponse = ""
+            for try await chunk in stream {
+                fullResponse += chunk
+                conversation.updateLastMessage(content: fullResponse)
+            }
+
+            conversation.setLastMessageStreaming(false)
+        } catch {
+            errorMessage = error.localizedDescription
+            if conversation.messages.last?.content.isEmpty == true {
+                conversation.messages.removeLast()
             }
         }
 

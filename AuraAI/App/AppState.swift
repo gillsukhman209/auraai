@@ -32,6 +32,12 @@ class AppState {
     // Shared define word state (set by Cmd+Shift+D hotkey, consumed by ChatView)
     var pendingWordToDefine: String?
 
+    // Shared transform text state (set by Cmd+Shift+T hotkey, consumed by ChatView)
+    var pendingTextToTransform: String?
+
+    // Quick summarize state (set by Cmd+Shift+S when text is selected)
+    var pendingTextToSummarize: String?
+
     init() {
         setupHotKeys()
     }
@@ -42,10 +48,17 @@ class AppState {
             self?.panelController.toggle()
         }
 
-        // Cmd+Shift+S - Quick screenshot
+        // Cmd+Shift+S - Screenshot
         hotKeyManager.onScreenshotHotKeyPressed = { [weak self] in
             Task { @MainActor in
                 await self?.captureAndShowScreenshot()
+            }
+        }
+
+        // Cmd+Shift+C - Quick summarize selected text
+        hotKeyManager.onSummarizeHotKeyPressed = { [weak self] in
+            Task { @MainActor in
+                await self?.summarizeTextFromSelection()
             }
         }
 
@@ -53,6 +66,13 @@ class AppState {
         hotKeyManager.onDefineHotKeyPressed = { [weak self] in
             Task { @MainActor in
                 await self?.defineWordFromSelection()
+            }
+        }
+
+        // Cmd+Shift+T - Transform selected text
+        hotKeyManager.onTransformHotKeyPressed = { [weak self] in
+            Task { @MainActor in
+                await self?.transformTextFromSelection()
             }
         }
     }
@@ -69,6 +89,37 @@ class AppState {
         } catch {
             print("Screenshot hotkey error: \(error.localizedDescription)")
         }
+    }
+
+    /// Summarize text from selection (triggered by Cmd+Shift+C)
+    /// Same logic as defineWordFromSelection but summarizes instead
+    @MainActor
+    private func summarizeTextFromSelection() async {
+        // Store current clipboard content to detect change
+        let previousChangeCount = NSPasteboard.general.changeCount
+
+        // Simulate Cmd+C to copy highlighted text
+        simulateCopy()
+
+        // Wait briefly for clipboard to update (up to 200ms)
+        var attempts = 0
+        while NSPasteboard.general.changeCount == previousChangeCount && attempts < 20 {
+            try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
+            attempts += 1
+        }
+
+        // Read clipboard
+        guard let text = clipboardService.readText() else { return }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            panelController.show()
+            return
+        }
+
+        // Set pending text and show panel - ChatView will consume it
+        pendingTextToSummarize = trimmed
+        panelController.show()
     }
 
     /// Define word from selection (triggered by Cmd+Shift+D)
@@ -105,20 +156,58 @@ class AppState {
         panelController.show()
     }
 
+    /// Transform text from selection (triggered by Cmd+Shift+T)
+    /// Simulates Cmd+C to copy highlighted text, then shows transform menu
+    @MainActor
+    private func transformTextFromSelection() async {
+        // Store current clipboard content to detect change
+        let previousChangeCount = NSPasteboard.general.changeCount
+
+        // Simulate Cmd+C to copy highlighted text
+        simulateCopy()
+
+        // Wait briefly for clipboard to update (up to 200ms)
+        var attempts = 0
+        while NSPasteboard.general.changeCount == previousChangeCount && attempts < 20 {
+            try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
+            attempts += 1
+        }
+
+        // Read clipboard
+        guard let text = clipboardService.readText() else { return }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Need some text to transform
+        guard !trimmed.isEmpty else {
+            panelController.show()
+            return
+        }
+
+        // Set pending text and show panel - ChatView will consume it
+        pendingTextToTransform = trimmed
+        panelController.show()
+    }
+
     /// Simulate Cmd+C keystroke to copy selected text
     private func simulateCopy() {
-        let source = CGEventSource(stateID: .hidSystemState)
+        // Get frontmost app to send the copy command to
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
+        let pid = frontApp.processIdentifier
+
+        // Use privateState to avoid interference from currently held modifier keys (Shift)
+        let source = CGEventSource(stateID: .privateState)
 
         // Key code for 'C' is 8
         let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: true)
         let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: false)
 
-        // Add Cmd modifier
+        // Add Cmd modifier (only Cmd, not Shift)
         keyDown?.flags = .maskCommand
         keyUp?.flags = .maskCommand
 
-        // Post the events
-        keyDown?.post(tap: .cghidEventTap)
-        keyUp?.post(tap: .cghidEventTap)
+        // Post directly to the frontmost app
+        keyDown?.postToPid(pid)
+        keyUp?.postToPid(pid)
     }
 }
